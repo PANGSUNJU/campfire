@@ -11,8 +11,8 @@
   /* 확대해서 보여 주는 큰 캔버스: 픽셀이 뭉개지지 않게 */
   #view { position: absolute; display: block; image-rendering: crisp-edges; image-rendering: pixelated; }
   /* 하단 버튼 줄 */
-  #bar { position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap; }
-  .btns { display: flex; gap: 14px; justify-content: center; align-items: center; }
+  #bar { position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap; width: max-content; max-width: calc(100vw - 8px); }
+  .btns { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: center; }
   /* 채팅 입력 줄(함께 보기일 때만 보임) */
   #chatRow { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
   #chatRow[hidden] { display: none; }
@@ -83,6 +83,7 @@
     <button id="btnPotato" class="px"><canvas width="16" height="16"></canvas><span>고구마</span></button>
     <button id="btnMarsh" class="px"><canvas width="16" height="16"></canvas><span>마시멜로</span></button>
     <button id="btnTea" class="px"><canvas width="16" height="16"></canvas><span>차 마시기</span></button>
+    <button id="btnGrill" class="px" hidden><canvas width="16" height="16"></canvas><span id="grillCount">물고기 ×0</span></button>
     <button id="btnFish" class="px" hidden><canvas width="16" height="16"></canvas><span>낚시하기</span></button>
     <button id="btnBack" class="px" hidden><canvas width="16" height="16"></canvas><span>모닥불로</span></button>
     <div id="fishBadge" class="badge" hidden aria-label="들고 있는 물고기"><canvas width="16" height="16"></canvas><span id="fishCount">×0</span></div>
@@ -169,6 +170,8 @@ const CONFIG = {
   // ── 호수와 낚시 ──
   fishMax: 5,                    // 들고 다닐 수 있는 물고기 수(탭을 닫으면 0으로 돌아감)
   fishWait: [5, 20],             // 입질이 올 때까지 기다리는 시간(초, 최소~최대)
+  fishCookTime: 35,              // 꼬챙이 물고기가 노릇하게 익는 시간(초)
+  fishBurnTime: 80,              // 물고기가 타기 직전이 되는 시간(초)
 
   // ── 소리 ──
   volume: 0.5,                   // 전체 음량(0~1)
@@ -192,6 +195,7 @@ const CONFIG = {
     glow: '#ff7a1a',
     firefly: '#d8ff7a',
     foil: '#b8bcc8', foilShade: '#7c8090', potatoIn: '#ffcf4a', potatoInHi: '#fff0a8',
+    fishRaw: '#8fb4d0', fishCooked: '#c88a48', fishBurnt: '#4a2c1c',
     marshWhite: '#fff6e8', marshGolden: '#d9a55a', marshBrown: '#6a3e22', marshBurnt: '#35201a',
     stick: '#7a5230',
     // 캐릭터: 대문자 = 불빛 받는 쪽, 소문자 = 그늘 쪽
@@ -856,7 +860,7 @@ const Items = {
   fly: null, accSteam: 0,
 
   init() {
-    const mk = () => ({ at: null, showAt: 0, hide: false, ghost: null, claim: false });
+    const mk = () => ({ at: null, showAt: 0, hide: false, ghost: null, claim: false, item: 'marshmallow' });   // item: 꼬챙이에 꽂힌 것
     this.slots.potato = this.potatoSlots.map(mk);
     this.slots.marsh = this.marshSlots.map(mk);
   },
@@ -864,11 +868,20 @@ const Items = {
   slot(kind, i) { const a = this.slots[kind]; return a ? a[i] : undefined; },
 
   // 자리에 올라감(서버 알림 또는 내가 올림). delay는 남이 올리는 동작이 도착하길 잠깐 기다리는 시간
-  setRow(kind, i, at, delay) {
+  setRow(kind, i, at, delay, item) {
     const s = this.slot(kind, i); if (!s) return;
     if (s.at === null) s.showAt = Clock.now() + (delay || 0);
     s.at = at; s.ghost = null; s.claim = false;
+    s.item = item === 'fish' ? 'fish' : 'marshmallow';
   },
+  itemOf(kind, i) { const s = this.slot(kind, i); return s ? s.item : 'marshmallow'; },
+  // 꼬챙이에 꽂힌 것의 색(익은 정도)과 타기 시작하는 시간
+  skewerColor(item, age) {
+    if (item !== 'fish') return this.marshColor(age);
+    const c = CONFIG.fishCookTime, b = CONFIG.fishBurnTime;
+    return age < c ? mix(P.fishRaw, P.fishCooked, age / c) : mix(P.fishCooked, P.fishBurnt, (age - c) / (b - c));
+  },
+  burnTime(item) { return item === 'fish' ? CONFIG.fishBurnTime : CONFIG.marshmallowBurnTime; },
   // 자리에서 사라짐. 누가 가지러 오는 중일 수 있어 보이던 것은 잠깐 남겨 둠
   removeRow(kind, i) {
     const s = this.slot(kind, i); if (!s || s.at === null) return;
@@ -927,7 +940,7 @@ const Items = {
         if (this.isRipe(i)) Campfire.puff(p[0] + 2 + rand(-1, 1), p[1] - 1, rand(-1, 1), -rand(7, 10), 1.6, 1, 2, 0.55, '#ffffff');
       });
       this.marshSlots.forEach((s, i) => {
-        if (this.visible('marsh', i) && this.age('marsh', i) > CONFIG.marshmallowBurnTime && Math.random() < 0.6)
+        if (this.visible('marsh', i) && this.age('marsh', i) > this.burnTime(this.itemOf('marsh', i)) && Math.random() < 0.6)
           Campfire.puff(s.tx, s.ty - 2, rand(-1, 1), -rand(5, 8), 1.8, 1, 2, 0.4, '#b0acc0');
       });
     }
@@ -960,12 +973,21 @@ const Items = {
     });
   },
 
-  // 꼬챙이 하나(col이 없으면 마시멜로 없이 나뭇가지만)
-  drawSkewer(ctx, bx, by, tx, ty, col) {
+  // 꼬챙이 하나(col이 없으면 나뭇가지만, item이 'fish'면 물고기)
+  drawSkewer(ctx, bx, by, tx, ty, col, item) {
     ctx.fillStyle = P.stick;
     plotLine(ctx, bx, by, tx, ty);
     if (!col) return;
     tx = Math.round(tx); ty = Math.round(ty);
+    if (item === 'fish') {   // 꼬챙이에 꿴 물고기: 몸통 5×3, 꼬리, 눈
+      const dir = tx >= bx ? 1 : -1;   // 머리가 꼬챙이 끝 쪽
+      ctx.fillStyle = col; ctx.fillRect(tx - 2, ty - 1, 5, 3);
+      ctx.fillRect(tx - dir * 3, ty - 2, 1, 2); ctx.fillRect(tx - dir * 4, ty - 3, 1, 2);
+      ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.35; ctx.fillRect(tx - 2, ty + 1, 5, 1);
+      ctx.fillStyle = '#000000'; ctx.globalAlpha = 0.3; ctx.fillRect(tx - 2, ty - 1, 1, 1); ctx.fillRect(tx + 2, ty - 1, 1, 1);
+      ctx.globalAlpha = 1; ctx.fillStyle = '#1a2030'; ctx.fillRect(tx + dir, ty, 1, 1);
+      return;
+    }
     ctx.fillStyle = col; ctx.fillRect(tx - 1, ty - 1, 3, 3);
     ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.45; ctx.fillRect(tx - 1, ty - 1, 1, 1);
     ctx.fillStyle = '#000000'; ctx.globalAlpha = 0.25; ctx.fillRect(tx + 1, ty + 1, 1, 1);
@@ -974,7 +996,7 @@ const Items = {
 
   drawSkewers(ctx) {
     this.marshSlots.forEach((s, i) => {
-      if (this.visible('marsh', i)) this.drawSkewer(ctx, s.bx, s.by, s.tx, s.ty, this.marshColor(this.age('marsh', i)));
+      if (this.visible('marsh', i)) { const it = this.itemOf('marsh', i); this.drawSkewer(ctx, s.bx, s.by, s.tx, s.ty, this.skewerColor(it, this.age('marsh', i)), it); }
     });
   },
 
@@ -1065,7 +1087,7 @@ class Actor {
     this.pal = Object.assign({}, P.char);
     this.x = this.homeX; this.pose = 'sit'; this.flip = false; this.arm = 'rest'; this.eyes = 'open';
     this.headDx = 0; this.chew = 0; this.rise = 0;
-    this.held = null; this.heldAge = 0; this.plant = null; this.plantSlot = null; this.mugOnLog = true;
+    this.held = null; this.heldAge = 0; this.heldItem = 'marshmallow'; this.plant = null; this.plantSlot = null; this.mugOnLog = true;
     this.busy = false; this.waiting = false; this.state = 'idle'; this.script = null; this.si = 0; this.st = 0; this.stepDone = false;
     this.target = null;      // 지금 동작이 다루는 자리 { kind, slot, eat }
     this.walking = false; this.walkT = 0; this.bob = 0;
@@ -1168,6 +1190,7 @@ class Actor {
     else if (kind === 'putPotato') this.putPotato(slot);
     else if (kind === 'eatPotato') this.eatPotato(slot);
     else if (kind === 'plantMarsh') this.plantMarsh(slot);
+    else if (kind === 'plantFish') this.plantMarsh(slot, 'fish');
     else if (kind === 'eatMarsh') this.eatMarsh(slot);
     else if (kind === 'go') this.goTo(slot);
     else if (kind === 'fish') this.goFishing(slot / 10);
@@ -1281,13 +1304,13 @@ class Actor {
   // 꼬챙이를 꽂거나 뽑을 때 서는 자리
   skewerSpot(slot) { return slot.side < 0 ? 120 : 185; }
 
-  // ── 마시멜로 꽂기 ──
-  plantMarsh(i) {
+  // ── 마시멜로(또는 잡아 온 물고기) 꽂기 ──
+  plantMarsh(i, item) {
     const slot = Items.marshSlots[i]; if (!slot) return;
     Items.hide('marsh', i);                                                  // 꽂기 전까지는 자리에 안 보임
     this.run('marsh', [
       this.set(0.7, { arm: 'hold', held: 'stick' }),                         // 나뭇가지 꼬챙이
-      this.set(0.8, { held: 'stickM', heldAge: 0 }),                         // 하얀 마시멜로를 끼움
+      this.set(0.8, { held: 'stickM', heldAge: 0, heldItem: item === 'fish' ? 'fish' : 'marshmallow' }),   // 마시멜로나 물고기를 끼움
       this.standUp(),
       this.walkTo(this.skewerSpot(slot)),
       { d: 0.3, enter: () => { this.flip = slot.side > 0; this.arm = 'down'; } },
@@ -1308,7 +1331,7 @@ class Actor {
       this.walkTo(this.skewerSpot(slot)),
       { d: 0.3, enter: () => { this.flip = slot.side > 0; this.arm = 'down'; } },
       { d: 0.6, enter: () => {                                               // 뽑아 듦
-          this.heldAge = Items.age('marsh', i); Items.clearGhost('marsh', i);
+          this.heldAge = Items.age('marsh', i); this.heldItem = Items.itemOf('marsh', i); Items.clearGhost('marsh', i);
           this.held = 'stickM'; this.plantSlot = slot; this.plant = 1;
         },
         update: p => { this.plant = 1 - p; },
@@ -1483,7 +1506,7 @@ class Actor {
         const s = this.plantSlot, p = this.plant;
         bx = lerp(bx, s.bx, p); by = lerp(by, s.by, p); tx = lerp(tx, s.tx, p); ty = lerp(ty, s.ty, p);
       }
-      Items.drawSkewer(ctx, bx, by, tx, ty, this.held === 'stickM' ? Items.marshColor(this.heldAge) : null);
+      Items.drawSkewer(ctx, bx, by, tx, ty, this.held === 'stickM' ? Items.skewerColor(this.heldItem, this.heldAge) : null, this.heldItem);
     }
   }
 }
@@ -1568,7 +1591,7 @@ const AudioFx = {
  *   · 동작·채팅(broadcast): 저장하지 않고 그 순간에만 전달
  *   · 불 위 자리(fire_slots 테이블): 먼저 올린/집은 한 명만 성공
  * ===================================================================== */
-const ACT_KINDS = { tea: null, notYet: null, putPotato: 'potato', eatPotato: 'potato', plantMarsh: 'marsh', eatMarsh: 'marsh', go: null, fish: null };
+const ACT_KINDS = { tea: null, notYet: null, putPotato: 'potato', eatPotato: 'potato', plantMarsh: 'marsh', plantFish: 'marsh', eatMarsh: 'marsh', go: null, fish: null };
 
 const Net = {
   sb: null, ch: null, online: false, joined: false,
@@ -1628,7 +1651,7 @@ const Net = {
         // 너무 오래 방치된 것은 치움
         if (Clock.now() - at > CONFIG.staleMinutes * 60000) { this.sb.from('fire_slots').delete().eq('kind', row.kind).eq('slot', row.slot).then(() => {}, () => {}); continue; }
         seen[row.kind + row.slot] = true;
-        Items.setRow(row.kind, row.slot, at, 0);
+        Items.setRow(row.kind, row.slot, at, 0, row.item);
       }
       for (const kind of ['potato', 'marsh']) Items.slots[kind].forEach((s, i) => { if (s.at !== null && !s.hide && !seen[kind + i]) Items.removeRow(kind, i); });
     }, () => {});
@@ -1677,7 +1700,7 @@ const Net = {
     if (!p) return;
     if (p.eventType === 'DELETE') { const r = p.old || {}; Items.removeRow(r.kind, r.slot); return; }
     const r = p.new || {}, at = Date.parse(r.placed_at);
-    if (!isNaN(at)) Items.setRow(r.kind, r.slot, at, 800);
+    if (!isNaN(at)) Items.setRow(r.kind, r.slot, at, 800, r.item);
   },
 
   // 다른 사람의 동작
@@ -1701,12 +1724,19 @@ const Net = {
   },
 
   // 자리에 올리기. 성공하면 true(같은 자리에 다른 사람이 먼저 올렸으면 false)
-  place(kind, i) {
+  place(kind, i, item) {
     Items.hide(kind, i);
-    if (!this.online) { Items.setRow(kind, i, Clock.now(), 0); return Promise.resolve(true); }
-    return this.sb.from('fire_slots').insert({ kind, slot: i, placed_by: Me.name }).then(r => {
-      if (r && r.error) { Items.land(kind, i); return false; }
-      Items.setRow(kind, i, Clock.now(), 0);
+    if (!this.online) { Items.setRow(kind, i, Clock.now(), 0, item); return Promise.resolve(true); }
+    const row = { kind, slot: i, placed_by: Me.name };
+    if (item === 'fish') row.item = 'fish';   // 마시멜로는 기본값이라 따로 보내지 않음
+    return this.sb.from('fire_slots').insert(row).then(r => {
+      if (r && r.error) {
+        Items.land(kind, i);
+        // 자리가 겹친 게 아니라면 서버 테이블에 item 칸이 아직 없는 경우
+        if (item === 'fish' && r.error.code !== '23505') UI.flash('물고기를 올리지 못했어요. 서버 SQL(item 칸 추가)을 확인해 주세요');
+        return false;
+      }
+      Items.setRow(kind, i, Clock.now(), 0, item);
       return true;
     }, () => { Items.land(kind, i); return false; });
   },
@@ -1834,6 +1864,7 @@ const UI = {
   status: null, chatRow: null, chatInput: null, lastChat: 0,
   logEl: null, logBtn: null, log: [],
   btnFish: null, btnBack: null, badge: null, fishCount: null, fish: 0,
+  btnGrill: null, grillCount: null, statusText: '', flashUntil: 0,
 
   icon(btn, ic) {
     const cv = btn.querySelector('canvas'), g = cv.getContext('2d');
@@ -1861,6 +1892,10 @@ const UI = {
     this.icon(this.btnFish, ICONS.rod);
     this.icon(this.btnBack, ICONS.fire);
     this.icon(this.badge, ICONS.fish);
+    this.btnGrill = document.getElementById('btnGrill');
+    this.grillCount = document.getElementById('grillCount');
+    this.icon(this.btnGrill, ICONS.fish);
+    this.btnGrill.addEventListener('click', () => { if (this.fish > 0) this.place('marsh', 'plantFish', 'fish'); });
     // 들고 있는 물고기 수는 이 탭에서만 기억(새로고침은 유지, 탭을 닫으면 0)
     try { const n = parseInt(sessionStorage.getItem('campfire-fish') || '0', 10); if (n > 0) this.fish = Math.min(CONFIG.fishMax, n); } catch (e) { /* 무시 */ }
     this.btnFish.addEventListener('click', () => {
@@ -1894,20 +1929,24 @@ const UI = {
     if (!this.canGo() || Me.place === dest) return;
     Net.act('go', dest); Me.goTo(dest); this.refresh();
   },
-  addFish() {
-    this.fish = Math.min(CONFIG.fishMax, this.fish + 1);
+  addFish() { this.setFish(this.fish + 1); },
+  setFish(n) {
+    this.fish = Math.max(0, Math.min(CONFIG.fishMax, n));
     try { sessionStorage.setItem('campfire-fish', String(this.fish)); } catch (e) { /* 무시 */ }
     this.refresh();
   },
 
   // 고구마·마시멜로 올리기: 자리를 먼저 차지한 뒤(서버 확인) 동작을 시작
-  place(kind, act) {
+  place(kind, act, item) {
     const i = Items.free(kind);
-    if (!this.canAct() || i < 0) return;
+    if (!this.canAct() || i < 0 || Scene.place !== 'camp') return;
     Me.waiting = true; this.refresh();
-    Net.place(kind, i).then(ok => {
+    Net.place(kind, i, item).then(ok => {
       Me.waiting = false;
-      if (ok) { Net.act(act, i); Me.perform(act, i); }
+      if (ok) {
+        if (item === 'fish') this.setFish(this.fish - 1);   // 들고 있던 물고기 한 마리를 씀
+        Net.act(act, i); Me.perform(act, i);
+      }
       this.refresh();
     });
   },
@@ -1964,7 +2003,9 @@ const UI = {
     if (open) this.renderLog();
   },
 
-  setStatus(text) { if (this.status.textContent !== text) this.status.textContent = text; },
+  setStatus(text) { this.statusText = text; if (!this.flashUntil && this.status.textContent !== text) this.status.textContent = text; },
+  // 잠깐 보여 주는 안내(몇 초 뒤 원래 상태 글자로 돌아감)
+  flash(text) { this.flashUntil = Date.now() + 6000; this.status.textContent = text; },
   showChat(show) {
     show = show && Setup.started;
     if (this.chatRow.hidden === !show) return;
@@ -1975,6 +2016,7 @@ const UI = {
   // 동작 중이거나 자리가 꽉 차면 버튼을 흐리게 하고 못 누르게 함
   refresh() {
     const b = !this.canAct(), dp = b || Items.free('potato') < 0, dm = b || Items.free('marsh') < 0;
+    if (this.flashUntil && Date.now() > this.flashUntil) { this.flashUntil = 0; this.status.textContent = this.statusText; }
     const lake = Scene.place === 'lake', df = b || this.fish >= CONFIG.fishMax, dg = !this.canGo();
     const key = (dp ? 1 : 0) + '' + (dm ? 1 : 0) + (b ? 1 : 0) + (df ? 1 : 0) + (dg ? 1 : 0) + (lake ? 'L' : 'C') + this.fish;
     if (key === this.last) return;
@@ -1985,8 +2027,12 @@ const UI = {
     const swap = this.btnFish.hidden === lake;
     this.btnPotato.hidden = this.btnMarsh.hidden = this.btnTea.hidden = lake;
     this.btnFish.hidden = this.btnBack.hidden = !lake;
-    this.badge.hidden = this.fish <= 0;
+    // 물고기: 호수에서는 개수만, 모닥불에서는 굽기 버튼(꼬챙이 자리가 차면 꺼짐)
+    this.badge.hidden = !lake || this.fish <= 0;
     this.fishCount.textContent = '×' + this.fish;
+    this.btnGrill.hidden = lake || this.fish <= 0;
+    this.btnGrill.disabled = dm;
+    this.grillCount.textContent = '물고기 ×' + this.fish;
     if (swap) Scene.layout();
   },
 };
