@@ -20,6 +20,15 @@
                font: 16px/1.2 inherit; font-family: inherit; box-shadow: 0 0 0 2px #3b3364; }
   #chatInput:focus { outline: 2px solid #ffd84a; }
   #chatSend { padding: 6px 12px; }
+  /* 대화 기록 창(이 탭을 닫으면 사라짐) */
+  #chatLog { position: absolute; left: 14px; top: 38px; z-index: 3; box-sizing: border-box; width: min(250px, 72vw); max-height: 42vh; overflow-y: auto;
+             padding: 8px 10px; background: rgba(29, 27, 56, .92); color: #f4e6c8; font: 13px/1.45 inherit; font-family: inherit; word-break: break-all;
+             box-shadow: 0 -3px 0 #7c70b0, -3px 0 0 #7c70b0, 3px 0 0 #3b3364, 0 3px 0 #3b3364; }
+  #chatLog[hidden] { display: none; }
+  #chatLog .who { color: #ffd84a; font-weight: bold; }
+  #chatLog .when { color: #9a90b8; font-size: 11px; margin-right: 5px; }
+  #chatLog .empty { color: #9a90b8; }
+  #chatLogBtn { padding: 6px 12px; }
   #status { position: absolute; top: 14px; left: 14px; color: #c8c0e0; font: 12px/1.2 inherit; font-family: inherit; text-shadow: 1px 1px 0 #05071a; pointer-events: none; }
   .px { display: flex; align-items: center; gap: 6px; min-height: 44px; margin: 3px; padding: 6px 12px 6px 8px;
         border: 0; border-radius: 0; background: #1d1b38; color: #f4e6c8; font: bold 14px/1 inherit; font-family: inherit;
@@ -64,6 +73,7 @@
 <button id="sound" class="px" aria-label="소리 켜기/끄기" aria-pressed="false"><canvas width="12" height="12"></canvas></button>
 <div id="tags"></div>
 <div id="status" aria-live="polite"></div>
+<div id="chatLog" hidden aria-label="대화 기록"></div>
 <div id="bar" style="visibility:hidden">
   <div class="btns">
     <button id="btnPotato" class="px"><canvas width="16" height="16"></canvas><span>고구마</span></button>
@@ -73,6 +83,7 @@
   <div id="chatRow" hidden>
     <input id="chatInput" type="text" placeholder="한마디 건네기" autocomplete="off" aria-label="채팅 입력">
     <button id="chatSend" class="px">보내기</button>
+    <button id="chatLogBtn" class="px" aria-expanded="false">기록</button>
   </div>
 </div>
 <div id="setup" role="dialog" aria-label="캐릭터 설정">
@@ -129,6 +140,7 @@ const CONFIG = {
   maxPlayers: 6,                 // 불 둘레에 앉을 수 있는 인원(최대 6)
   chatMaxLength: 40,             // 채팅 한 번에 쓸 수 있는 글자 수
   chatBubbleSeconds: 5,          // 말풍선이 떠 있는 시간(초)
+  chatLogMax: 50,                // 대화 기록에 남겨 두는 최대 줄 수(이 탭을 닫으면 사라짐)
   staleMinutes: 30,              // 이 시간(분)보다 오래 방치된 고구마·마시멜로는 치움
 
   // ── 첫 화면 설정 ──
@@ -1389,6 +1401,7 @@ const Net = {
         this.online = false;
         UI.setStatus('연결이 끊겼어요. 혼자 보는 중');
         UI.showChat(false);
+        if (!UI.logEl.hidden) UI.toggleLog();
       }
     });
   },
@@ -1481,7 +1494,9 @@ const Net = {
   onChat(p) {
     if (!p || typeof p.text !== 'string') return;
     const a = this.others.get(p.id);
-    if (a) a.say(p.text.slice(0, CONFIG.chatMaxLength), Scene.time);
+    if (!a) return;
+    a.say(p.text.slice(0, CONFIG.chatMaxLength), Scene.time);
+    UI.addLog(a.name, p.text);
   },
 
   // 자리에 올리기. 성공하면 true(같은 자리에 다른 사람이 먼저 올렸으면 false)
@@ -1580,6 +1595,7 @@ const ICONS = {
 const UI = {
   btnPotato: null, btnMarsh: null, btnTea: null, btnSound: null, last: '',
   status: null, chatRow: null, chatInput: null, lastChat: 0,
+  logEl: null, logBtn: null, log: [],
 
   icon(btn, ic) {
     const cv = btn.querySelector('canvas'), g = cv.getContext('2d');
@@ -1609,6 +1625,11 @@ const UI = {
       this.icon(this.btnSound, on ? ICONS.soundOn : ICONS.soundOff);
       this.btnSound.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+    this.logEl = document.getElementById('chatLog');
+    this.logBtn = document.getElementById('chatLogBtn');
+    this.logBtn.addEventListener('click', () => this.toggleLog());
+    // 이 탭에서 주고받은 대화만 임시로 들고 있음(새로고침해도 남고, 탭을 닫으면 사라짐)
+    try { const saved = JSON.parse(sessionStorage.getItem('campfire-chat') || '[]'); if (Array.isArray(saved)) this.log = saved.slice(-CONFIG.chatLogMax); } catch (e) { /* 무시 */ }
     document.getElementById('chatSend').addEventListener('click', () => this.sendChat());
     this.chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') this.sendChat(); });
   },
@@ -1644,7 +1665,39 @@ const UI = {
     this.lastChat = now;
     this.chatInput.value = '';
     Me.say(text, Scene.time);
+    this.addLog(Me.name, text);
     Net.chat(text);
+  },
+
+  // ── 대화 기록 ──
+  addLog(name, text) {
+    const d = new Date(), two = n => (n < 10 ? '0' : '') + n;
+    const item = { n: String(name || '').slice(0, CONFIG.nameMaxLength), t: String(text).slice(0, CONFIG.chatMaxLength), h: two(d.getHours()) + ':' + two(d.getMinutes()) };
+    this.log.push(item);
+    if (this.log.length > CONFIG.chatLogMax) this.log.shift();
+    try { sessionStorage.setItem('campfire-chat', JSON.stringify(this.log)); } catch (e) { /* 무시 */ }
+    if (!this.logEl.hidden) this.renderLog();
+  },
+  logLine(item) {
+    const row = document.createElement('div');
+    const when = document.createElement('span'); when.className = 'when'; when.textContent = item.h;
+    const who = document.createElement('span'); who.className = 'who'; who.textContent = (item.n || '이름 없음') + ' ';
+    const what = document.createElement('span'); what.textContent = item.t;   // textContent라 입력한 글자가 그대로만 보임
+    row.appendChild(when); row.appendChild(who); row.appendChild(what);
+    return row;
+  },
+  renderLog() {
+    this.logEl.textContent = '';
+    while (this.logEl.firstChild) this.logEl.removeChild(this.logEl.firstChild);
+    if (!this.log.length) { const e = document.createElement('div'); e.className = 'empty'; e.textContent = '아직 나눈 대화가 없어요.'; this.logEl.appendChild(e); }
+    for (const item of this.log) this.logEl.appendChild(this.logLine(item));
+    this.logEl.scrollTop = this.logEl.scrollHeight;   // 가장 최근 대화가 보이게
+  },
+  toggleLog() {
+    const open = this.logEl.hidden;
+    this.logEl.hidden = !open;
+    this.logBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) this.renderLog();
   },
 
   setStatus(text) { if (this.status.textContent !== text) this.status.textContent = text; },
