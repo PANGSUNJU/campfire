@@ -12,7 +12,7 @@
   #view { position: absolute; display: block; image-rendering: crisp-edges; image-rendering: pixelated; }
   /* 하단 버튼 줄 */
   #bar { position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap; }
-  .btns { display: flex; gap: 14px; justify-content: center; }
+  .btns { display: flex; gap: 14px; justify-content: center; align-items: center; }
   /* 채팅 입력 줄(함께 보기일 때만 보임) */
   #chatRow { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
   #chatRow[hidden] { display: none; }
@@ -38,6 +38,10 @@
   .px canvas { width: 28px; height: 28px; image-rendering: crisp-edges; image-rendering: pixelated; }
   .px:active:not(:disabled) { transform: translateY(2px); }
   .px:disabled { opacity: .4; cursor: default; }
+  .px[hidden], .badge[hidden] { display: none; }
+  /* 들고 있는 물고기 수 */
+  .badge { display: flex; align-items: center; gap: 4px; min-height: 44px; margin: 3px; padding: 0 4px; color: #f4e6c8; font: bold 14px/1 inherit; font-family: inherit; }
+  .badge canvas { width: 28px; height: 28px; image-rendering: crisp-edges; image-rendering: pixelated; }
   .px:focus-visible { outline: 2px solid #ffd84a; outline-offset: 4px; }
   #sound { position: absolute; top: 10px; right: 10px; min-height: 40px; padding: 6px; margin: 3px; }
   #sound canvas { width: 24px; height: 24px; }
@@ -79,6 +83,9 @@
     <button id="btnPotato" class="px"><canvas width="16" height="16"></canvas><span>고구마</span></button>
     <button id="btnMarsh" class="px"><canvas width="16" height="16"></canvas><span>마시멜로</span></button>
     <button id="btnTea" class="px"><canvas width="16" height="16"></canvas><span>차 마시기</span></button>
+    <button id="btnFish" class="px" hidden><canvas width="16" height="16"></canvas><span>낚시하기</span></button>
+    <button id="btnBack" class="px" hidden><canvas width="16" height="16"></canvas><span>모닥불로</span></button>
+    <div id="fishBadge" class="badge" hidden aria-label="들고 있는 물고기"><canvas width="16" height="16"></canvas><span id="fishCount">×0</span></div>
   </div>
   <div id="chatRow" hidden>
     <input id="chatInput" type="text" placeholder="한마디 건네기" autocomplete="off" aria-label="채팅 입력">
@@ -129,6 +136,7 @@ const CONFIG = {
 
   // ── 캐릭터 ──
   walkSpeed: 18,                 // 걷는 속도(px/초)
+  travelSpeed: 36,               // 모닥불 ↔ 호수를 오갈 때 걷는 속도(px/초)
   blinkInterval: [3, 6],         // 눈 깜빡임 간격(초)
   warmHandsInterval: [12, 24],   // 손 쬐기 간격(초)
   breathPeriod: 3.6,             // 숨 한 번 주기(초)
@@ -157,6 +165,10 @@ const CONFIG = {
   marshmallowGoldenTime: 25,     // 마시멜로가 노릇해지는 시간(초)
   marshmallowBurnTime: 60,       // 마시멜로가 타기 직전이 되는 시간(초)
   marshmallowMax: 4,             // 꼬챙이 자리 수(최대 4)
+
+  // ── 호수와 낚시 ──
+  fishMax: 5,                    // 들고 다닐 수 있는 물고기 수(탭을 닫으면 0으로 돌아감)
+  fishWait: [5, 20],             // 입질이 올 때까지 기다리는 시간(초, 최소~최대)
 
   // ── 소리 ──
   volume: 0.5,                   // 전체 음량(0~1)
@@ -722,6 +734,102 @@ const Campfire = {
 };
 
 /* =====================================================================
+ * Lake — 밤호수 장면: 달, 건너편 숲, 물결, 낚시터, 표지판
+ * ===================================================================== */
+const SHORE_Y = 112;                                  // 건너편 물가 높이
+const LAKE_SEATS = [60, 94, 128, 162, 196, 230];      // 낚시터에 앉는 자리(모두 오른쪽을 봄)
+const SIGN_SPR = [
+  '.WWWWWWWWWW..',
+  'WWWWWWWWAWWW.',
+  'WWAAAAAAAAWWW',
+  'WWWWWWWWAWWW.',
+  '.WWWWWWWWWW..',
+  '..wwwwwwwww..',
+  '.....pp......', '.....pp......', '.....pp......', '.....pp......', '.....pp......',
+  '.....pp......', '.....pp......', '.....pp......', '.....pp......',
+];
+const SIGN_PAL = { W: '#7a5a38', w: '#3e2c1c', A: '#f4e6c8', p: '#4a3422' };
+// 표지판 위치: 모닥불 쪽은 오른쪽 끝(호수로), 호수 쪽은 왼쪽 끝(모닥불로)
+const SIGNS = { camp: { x: 279, y: 137, flip: false }, lake: { x: 5, y: 126, flip: true } };
+const FISH_SPR = ['.FFFF.T', 'FEFFFTT', '.BBBB.T'];
+const FISH_PAL = { F: '#8fb4d0', B: '#d8e8f0', E: '#1a2030', T: '#6a90b0' };
+
+const Lake = {
+  water: null, front: null, ripples: [], glints: [],
+
+  init() {
+    const rng = mulberry32(31337);
+    // 건너편 숲과 물(달빛 반사보다 뒤)
+    this.water = makeCanvas(W, H);
+    let g = this.water.getContext('2d');
+    for (let x = -6; x < W + 6; x += 5 + rng() * 6) Forest.tree(g, rng, Math.round(x), SHORE_Y - 2, Math.round(6 + rng() * 7), 5 + rng() * 3, '#1c1e44', null);
+    g.fillStyle = '#1c1e44'; g.fillRect(0, SHORE_Y - 2, W, 2);
+    for (let x = -8; x < W + 8; x += 7 + rng() * 9) Forest.tree(g, rng, Math.round(x), SHORE_Y, Math.round(9 + rng() * 12), 7 + rng() * 4, '#10142e', null);
+    for (let y = SHORE_Y; y < H; y++) { g.fillStyle = mix('#182050', '#060a1e', (y - SHORE_Y) / (H - SHORE_Y)); g.fillRect(0, y, W, 1); }
+    g.fillStyle = '#0c1028'; g.globalAlpha = 0.55; g.fillRect(0, SHORE_Y, W, 9); g.globalAlpha = 1;   // 물에 비친 숲 그림자
+
+    // 앞쪽: 왼쪽 물가 언덕, 갈대, 나무 낚시터
+    this.front = makeCanvas(W, H);
+    g = this.front.getContext('2d');
+    for (let x = 0; x < 76; x++) {
+      const top = Math.round(138 + Math.pow(x / 76, 2) * 22);
+      g.fillStyle = '#0a100f'; g.fillRect(x, top, 1, H - top);
+      g.fillStyle = '#1c2a2c'; g.fillRect(x, top, 1, 1);
+    }
+    g.fillStyle = '#12221c';
+    for (let i = 0; i < 16; i++) { const x = (rng() * 60) | 0, y = 144 + ((rng() * 30) | 0); g.fillRect(x, y - 2, 1, 3); g.fillRect(x + 2, y - 1, 1, 2); }
+    for (let i = 0; i < 9; i++) {   // 갈대
+      const x = 50 + ((rng() * 30) | 0), h = 7 + ((rng() * 6) | 0), y = 150 + ((rng() * 14) | 0);
+      g.fillStyle = '#14261c'; g.fillRect(x, y - h, 1, h);
+      g.fillStyle = '#3a3424'; g.fillRect(x, y - h - 2, 1, 2);
+    }
+    for (let x = 38; x < 300; x += 42) {   // 낚시터 기둥
+      g.fillStyle = '#2a2018'; g.fillRect(x, 155, 3, 19);
+      g.fillStyle = '#1a1410'; g.fillRect(x + 2, 155, 1, 19);
+    }
+    g.fillStyle = '#6a5440'; g.fillRect(24, 152, 278, 1);   // 널빤지
+    g.fillStyle = '#4a3828'; g.fillRect(24, 153, 278, 1);
+    g.fillStyle = '#2e2219'; g.fillRect(24, 154, 278, 1);
+    g.fillStyle = '#3a2c20'; for (let x = 31; x < 302; x += 9) g.fillRect(x, 152, 1, 2);
+
+    for (let i = 0; i < 46; i++) this.ripples.push({ x: (rng() * W) | 0, y: SHORE_Y + 4 + ((rng() * 62) | 0), w: 2 + ((rng() * 5) | 0), ph: rng() * TAU, sp: 0.4 + rng() * 0.9 });
+    for (let i = 0; i < 30; i++) this.glints.push({ x: (rng() * W) | 0, y: SHORE_Y + 3 + ((rng() * 50) | 0), ph: rng() * TAU, sp: 0.5 + rng() * 1.5 });
+  },
+
+  drawSign(ctx, place) { const s = SIGNS[place]; drawSprite(ctx, SIGN_SPR, SIGN_PAL, s.x, s.y, s.flip); },
+  signHit(place, x, y) { const s = SIGNS[place]; return Math.abs(x - (s.x + 6)) < 13 && Math.abs(y - (s.y + 6)) < 14; },
+
+  draw(ctx, t) {
+    const mxx = 236, my = 36, slow = Motion.reduced ? 0.3 : 1;
+    // 달과 달무리
+    ctx.fillStyle = '#c8d0ff';
+    ctx.globalAlpha = 0.04; fillEllipse(ctx, mxx, my, 21, 21);
+    ctx.globalAlpha = 0.07; fillEllipse(ctx, mxx, my, 13, 13);
+    ctx.globalAlpha = 1; ctx.fillStyle = '#f4f0d8'; fillEllipse(ctx, mxx, my, 7, 7);
+    ctx.fillStyle = '#d8d2b4'; ctx.fillRect(mxx - 3, my - 2, 2, 2); ctx.fillRect(mxx + 2, my + 1, 2, 1); ctx.fillRect(mxx - 1, my + 3, 1, 1);
+
+    ctx.drawImage(this.water, 0, 0);
+
+    // 물에 비친 별빛과 잔물결
+    ctx.fillStyle = '#dfe8ff';
+    for (const s of this.glints) { const a = Math.sin(t * s.sp * slow + s.ph); if (a > 0) { ctx.globalAlpha = a * 0.28; ctx.fillRect(s.x, s.y, 1, 1); } }
+    ctx.fillStyle = '#8aa0e0';
+    for (const r of this.ripples) { const a = Math.sin(t * r.sp * slow + r.ph); if (a > 0) { ctx.globalAlpha = a * 0.11; ctx.fillRect(r.x, r.y, r.w, 1); } }
+    // 물에 비친 달빛 기둥(일렁임)
+    ctx.fillStyle = '#f4f0d8';
+    for (let y = SHORE_Y + 4; y < H - 2; y += 2) {
+      const w = 3 + 5 * Math.abs(Math.sin(t * 1.3 * slow + y * 0.7)), off = Math.sin(t * 0.9 * slow + y * 0.45) * 3;
+      ctx.globalAlpha = 0.08 + 0.42 * (1 - (y - SHORE_Y) / (H - SHORE_Y));
+      ctx.fillRect(Math.round(mxx + off - w / 2), y, Math.round(w), 1);
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.drawImage(this.front, 0, 0);
+    this.drawSign(ctx, 'lake');
+  },
+};
+
+/* =====================================================================
  * Items — 고구마(불 속)와 마시멜로 꼬챙이(불 둘레). 모두가 함께 보는 상태
  * ===================================================================== */
 const HALF_SPR = ['FYy', 'FYY', '.FF'];
@@ -952,6 +1060,8 @@ class Actor {
   constructor(isMe) {
     this.isMe = isMe; this.id = ''; this.name = '';
     this.seat = 0; this.seated = true; this.homeX = SEATS[0]; this.homeFlip = false;
+    this.place = 'camp';     // 지금 있는 곳: 'camp'(모닥불) 또는 'lake'(호수)
+    this.fishing = null;     // 낚시 중일 때 찌 상태 { phase, p }
     this.pal = Object.assign({}, P.char);
     this.x = this.homeX; this.pose = 'sit'; this.flip = false; this.arm = 'rest'; this.eyes = 'open';
     this.headDx = 0; this.chew = 0; this.rise = 0;
@@ -984,7 +1094,21 @@ class Actor {
     if (this.script) this.finish();
     this.seat = seat; this.seated = seat !== null && seat !== undefined && seat < SEATS.length;
     if (!this.seated) return;
-    this.homeX = SEATS[seat]; this.homeFlip = this.homeX + 8 > CONFIG.fireX;
+    this.applyHome();
+    this.x = this.homeX; this.flip = this.homeFlip; this.tagKey = '';
+  }
+
+  // 지금 있는 곳과 자리 번호로 앉을 위치를 정함
+  applyHome() {
+    if (!this.seated) return;
+    if (this.place === 'lake') { this.homeX = LAKE_SEATS[this.seat]; this.homeFlip = false; }
+    else { this.homeX = SEATS[this.seat]; this.homeFlip = this.homeX + 8 > CONFIG.fireX; }
+  }
+
+  // 걷는 과정 없이 바로 장소를 바꿈(다른 접속자의 위치를 맞출 때)
+  setPlace(place) {
+    if (this.script) this.finish();
+    this.place = place; this.applyHome();
     this.x = this.homeX; this.flip = this.homeFlip; this.tagKey = '';
   }
 
@@ -1013,6 +1137,8 @@ class Actor {
     this.script = null; this.state = 'idle'; this.busy = false;
     this.x = this.homeX; this.pose = 'sit'; this.flip = this.homeFlip; this.arm = 'rest'; this.eyes = 'open';
     this.headDx = 0; this.chew = 0; this.rise = 0; this.held = null; this.plant = null; this.walking = false; this.mugOnLog = true;
+    this.fishing = null;
+    if (this.isMe) { Scene.fade = 0; Scene.place = this.place; }
     this.warmT = rand(CONFIG.warmHandsInterval[0], CONFIG.warmHandsInterval[1]);
   }
 
@@ -1020,12 +1146,13 @@ class Actor {
   set(d, props, extra) { const s = { d, enter: () => Object.assign(this, props) }; return Object.assign(s, extra || {}); }
   standUp() { return { d: 0.4, enter: () => { this.pose = 'stand'; }, update: p => { this.rise = p < 0.5 ? 1 : 0; } }; }
   sitDown(arm) { return { d: 0.35, enter: () => { this.pose = 'sit'; this.flip = this.homeFlip; this.walking = false; this.x = this.homeX; this.arm = arm || 'rest'; } }; }
-  walkTo(tx) {
+  walkTo(target, speed) {   // target은 x좌표 또는 x좌표를 돌려주는 함수(도착할 때 정해지는 자리용)
+    let tx = 0;
     return {
       d: Infinity,
-      enter: () => { this.pose = 'stand'; this.walking = true; this.walkT = 0; if (tx !== this.x) this.flip = tx < this.x; },
+      enter: () => { tx = typeof target === 'function' ? target() : target; this.pose = 'stand'; this.walking = true; this.walkT = 0; if (tx !== this.x) this.flip = tx < this.x; },
       update: (p, dt) => {
-        const dir = Math.sign(tx - this.x), step = CONFIG.walkSpeed * dt;
+        const dir = Math.sign(tx - this.x), step = (speed || CONFIG.walkSpeed) * dt;
         if (Math.abs(tx - this.x) <= step) { this.x = tx; this.stepDone = true; }
         else this.x += dir * step;
         this.walkT += dt;
@@ -1042,7 +1169,42 @@ class Actor {
     else if (kind === 'eatPotato') this.eatPotato(slot);
     else if (kind === 'plantMarsh') this.plantMarsh(slot);
     else if (kind === 'eatMarsh') this.eatMarsh(slot);
+    else if (kind === 'go') this.goTo(slot);
+    else if (kind === 'fish') this.goFishing(slot / 10);
   }
+
+  // ── 표지판을 따라 다른 곳으로 걸어가기(화면 전환) ──
+  goTo(dest) {
+    if (dest !== 'camp' && dest !== 'lake' || dest === this.place) return;
+    const edge = p => p === 'camp' ? 326 : -22;   // 모닥불은 오른쪽 끝, 호수는 왼쪽 끝으로 드나듦
+    const steps = [this.standUp(), this.walkTo(edge(this.place), CONFIG.travelSpeed)];
+    if (this.isMe) steps.push({ d: 0.8, update: p => { Scene.fade = p; } });            // 화면이 천천히 어두워짐
+    steps.push({ d: 0.05, enter: () => {
+      this.place = dest; this.applyHome(); this.x = edge(dest); this.tagKey = '';
+      if (this.isMe) { Scene.place = dest; Net.track(); }
+    } });
+    if (this.isMe) steps.push({ d: 0.8, update: p => { Scene.fade = 1 - p; } });        // 다시 밝아짐
+    steps.push(this.walkTo(() => this.homeX, CONFIG.travelSpeed), this.sitDown());
+    this.run('go', steps);
+  }
+
+  // ── 낚시: 던지고, 기다리고, 입질이 오면 알아서 낚아 올림(실패 없음) ──
+  goFishing(wait) {
+    if (this.place !== 'lake') return;
+    wait = Math.max(CONFIG.fishWait[0], Math.min(CONFIG.fishWait[1], wait || CONFIG.fishWait[0]));
+    this.run('fish', [
+      this.set(0.5, { arm: 'hold', held: 'rod' }),
+      { d: 0.7, enter: () => { this.arm = 'reach'; this.fishing = { phase: 'cast', p: 0 }; }, update: p => { this.fishing.p = p; } },
+      { d: wait, enter: () => { this.arm = 'hold'; this.fishing.phase = 'wait'; } },          // 찌를 바라보며 기다림
+      { d: 0.9, enter: () => { this.fishing.phase = 'bite'; } },                               // 입질: 찌가 쑥 들어감
+      { d: 0.6, enter: () => { this.arm = 'reach'; this.fishing.phase = 'reel'; this.fishing.p = 0; }, update: p => { this.fishing.p = p; } },
+      { d: 1.4, enter: () => { this.fishing = null; this.held = 'fish'; this.arm = 'hold'; this.eyes = 'happy'; if (this.isMe) UI.addFish(); } },
+      this.set(0.4, { held: null, arm: 'rest' }),
+    ]);
+  }
+
+  // 찌가 떠 있는 자리
+  bobberSpot() { return [this.homeX + 23, 158 + (this.seat % 2) * 2]; }   // 낚시터 앞쪽 물
 
   // ── 차 마시기(약 7.5초) ──
   drinkTea() {
@@ -1208,6 +1370,13 @@ class Actor {
   // 통나무 의자와 그 위의 머그컵(불에서 먼 자리일수록 어둡게)
   drawLog(ctx) {
     if (!this.seated) return;
+    if (this.place === 'lake') {   // 낚시터에서는 나무 상자에 앉음
+      const x0 = this.homeX - 1, y = CHAR_Y + 19;
+      ctx.fillStyle = '#4a3626'; ctx.fillRect(x0, y, 12, 5);
+      ctx.fillStyle = '#6a5038'; ctx.fillRect(x0, y, 12, 1);
+      ctx.fillStyle = '#2e2219'; ctx.fillRect(x0, y, 1, 5); ctx.fillRect(x0 + 11, y, 1, 5); ctx.fillRect(x0 + 1, y + 2, 10, 1);
+      return;
+    }
     const hf = this.homeFlip, y0 = CHAR_Y + 19, w = 18;
     const wx = c => this.homeX + (hf ? 15 - c : c);
     const far = Math.min(2, (this.seat / 2) | 0);
@@ -1233,7 +1402,7 @@ class Actor {
     if (!this.seated) return;
     const pal = this.pal, x = Math.round(this.x), f = this.flip;
     // 밝은 쪽(대문자)이 항상 불을 향하도록, 필요할 때 밝은 쪽/그늘 쪽 색을 맞바꿈
-    const sw = (!f) !== (x + 8 < CONFIG.fireX);
+    const sw = (!f) !== (this.place === 'lake' ? true : x + 8 < CONFIG.fireX);   // 호수에서는 달빛이 오른쪽에서 옴
     let oy;
     if (this.pose === 'sit') {
       oy = CHAR_Y + this.bob;
@@ -1277,6 +1446,34 @@ class Actor {
     else if (this.held === 'potato') Items.drawPotato(ctx, ix(5), iy, t, 1);
     else if (this.held === 'halves') { drawSprite(ctx, HALF_SPR, HALF_PAL, ix(3), iy, f); drawSprite(ctx, HALF_SPR, HALF_PAL, ix(3) + (f ? -4 : 4), iy, !f); }
     else if (this.held === 'half') drawSprite(ctx, HALF_SPR, HALF_PAL, ix(3), iy, f);
+    else if (this.held === 'fish') drawSprite(ctx, FISH_SPR, FISH_PAL, ix(7), iy, f);
+    else if (this.held === 'rod') {
+      // 낚싯대와 낚싯줄, 찌
+      const dir = f ? -1 : 1, hx0 = this.lx(arm.hand[0]), hy0 = oy + arm.hand[1];
+      const tipX = hx0 + dir * (this.arm === 'reach' ? 11 : 9), tipY = hy0 - (this.arm === 'reach' ? 9 : 15);
+      ctx.fillStyle = '#8a6a44'; plotLine(ctx, hx0, hy0, tipX, tipY);
+      const fs = this.fishing;
+      if (fs) {
+        const spot = this.bobberSpot();
+        let bx = spot[0], by = spot[1], fish = false;
+        if (fs.phase === 'cast') { bx = lerp(tipX, spot[0], fs.p); by = lerp(tipY, spot[1], fs.p) - Math.sin(Math.PI * fs.p) * 8; }
+        else if (fs.phase === 'wait') by += Math.sin(t * 2 + this.seat) > 0 ? 0 : 1;            // 잔잔히 까딱임
+        else if (fs.phase === 'bite') by += 1 + (((t * 8) | 0) % 2);                             // 쑥 들어갔다 나왔다
+        else { fish = true; bx = lerp(spot[0], hx0 + dir * 3, fs.p); by = lerp(spot[1], hy0 - 4, fs.p) - Math.sin(Math.PI * fs.p) * 10; }
+        bx = Math.round(bx); by = Math.round(by);
+        ctx.fillStyle = '#c8d0e8'; ctx.globalAlpha = 0.45; plotLine(ctx, tipX, tipY, bx, by); ctx.globalAlpha = 1;
+        if (fish) drawSprite(ctx, FISH_SPR, FISH_PAL, bx - 3, by - 1, false);
+        else {
+          ctx.fillStyle = '#e8503c'; ctx.fillRect(bx, by - 1, 2, 1);
+          ctx.fillStyle = '#f4f0e8'; ctx.fillRect(bx, by, 2, 1);
+          if (fs.phase !== 'cast') {   // 찌 둘레 물결(입질 때 더 넓게)
+            const wide = fs.phase === 'bite' ? 5 + (((t * 6) | 0) % 3) * 2 : 3;
+            ctx.fillStyle = '#8aa0e0'; ctx.globalAlpha = fs.phase === 'bite' ? 0.6 : 0.3;
+            ctx.fillRect(bx + 1 - wide, spot[1] + 2, wide * 2, 1); ctx.globalAlpha = 1;
+          }
+        }
+      }
+    }
     else if (this.held === 'stick' || this.held === 'stickM') {
       const dir = f ? -1 : 1, hand = [this.lx(arm.hand[0]), oy + arm.hand[1]];
       let bx, by, tx, ty;
@@ -1371,7 +1568,7 @@ const AudioFx = {
  *   · 동작·채팅(broadcast): 저장하지 않고 그 순간에만 전달
  *   · 불 위 자리(fire_slots 테이블): 먼저 올린/집은 한 명만 성공
  * ===================================================================== */
-const ACT_KINDS = { tea: null, notYet: null, putPotato: 'potato', eatPotato: 'potato', plantMarsh: 'marsh', eatMarsh: 'marsh' };
+const ACT_KINDS = { tea: null, notYet: null, putPotato: 'potato', eatPotato: 'potato', plantMarsh: 'marsh', eatMarsh: 'marsh', go: null, fish: null };
 
 const Net = {
   sb: null, ch: null, online: false, joined: false,
@@ -1408,7 +1605,7 @@ const Net = {
 
   track() {
     if (!this.ch) return;
-    this.ch.track({ name: Me.name, hat: Setup.sel.hat, coat: Setup.sel.coat, pants: Setup.sel.pants, seat: this.seat, t: this.joinedAt });
+    this.ch.track({ name: Me.name, hat: Setup.sel.hat, coat: Setup.sel.coat, pants: Setup.sel.pants, seat: this.seat, place: Me.place, t: this.joinedAt });
   },
 
   // 서버 시각과 내 기기 시각의 차이를 구함
@@ -1465,6 +1662,8 @@ const Net = {
       const name = String(o.name == null ? '' : o.name).slice(0, CONFIG.nameMaxLength);
       if (a.name !== name) a.setName(name);
       if (a.seat !== o.seat) a.setSeat(o.seat);
+      const place = o.place === 'lake' ? 'lake' : 'camp';
+      if (!a.script && a.place !== place) a.setPlace(place);   // 걸어가는 중이 아니면 위치를 바로 맞춤
     }
     for (const [id, a] of this.others) if (!alive.has(id)) { a.remove(); this.others.delete(id); }
 
@@ -1486,6 +1685,8 @@ const Net = {
     if (!p || !(p.kind in ACT_KINDS)) return;
     const item = ACT_KINDS[p.kind];
     if (item && !Items.slot(item, p.slot)) return;
+    if (p.kind === 'go' && p.slot !== 'camp' && p.slot !== 'lake') return;
+    if (p.kind === 'fish' && !(Number.isInteger(p.slot) && p.slot > 0 && p.slot <= 600)) return;
     const a = this.others.get(p.id);
     if (item) { if (p.kind.indexOf('eat') === 0) Items.claim(item, p.slot); else if (a) Items.hide(item, p.slot); }
     if (a && a.seated) a.perform(p.kind, p.slot);
@@ -1568,6 +1769,42 @@ const ICONS = {
     '...MMMMMMMM.....',
     '....MMMMMM......',
     '................', '................', '................', '................'] },
+  rod: { pal: { r: '#b08a58', l: '#c8d0e8', b: '#e8503c', w: '#8aa0e0' }, rows: [
+    '................',
+    '...........r....',
+    '..........rl....',
+    '.........r.l....',
+    '........r..l....',
+    '.......r...l....',
+    '......r....l....',
+    '.....r.....l....',
+    '....r......l....',
+    '...r.......b....',
+    '..r.......wbw...',
+    '.r.......w...w..',
+    '................', '................', '................', '................'] },
+  fire: { pal: { R: '#e8501a', O: '#ff9a22', Y: '#ffd84a', L: '#5a3a22' }, rows: [
+    '................', '................',
+    '.......R........',
+    '......RR........',
+    '......ROR..R....',
+    '.....ROOR.RR....',
+    '....RROYORR.....',
+    '....ROYYYOR.....',
+    '....ROYYYOR.....',
+    '.....RYYYR......',
+    '...LLLLLLLLLL...',
+    '..LLLLLLLLLLLL..',
+    '................', '................', '................', '................'] },
+  fish: { pal: { F: '#8fb4d0', B: '#d8e8f0', E: '#1a2030', T: '#6a90b0' }, rows: [
+    '................', '................', '................', '................',
+    '....FFFFFF......',
+    '..FFFFFFFFF..TT.',
+    '.FEFFFFFFFFFTTT.',
+    '.FFFFFFFFFFFTT..',
+    '..BBBBBBBBB.TTT.',
+    '....BBBBBB...TT.',
+    '................', '................', '................', '................', '................', '................'] },
   soundOn: { pal: { S: '#f4e6c8', w: '#ffd84a' }, rows: [
     '............', '............',
     '.....S......',
@@ -1596,6 +1833,7 @@ const UI = {
   btnPotato: null, btnMarsh: null, btnTea: null, btnSound: null, last: '',
   status: null, chatRow: null, chatInput: null, lastChat: 0,
   logEl: null, logBtn: null, log: [],
+  btnFish: null, btnBack: null, badge: null, fishCount: null, fish: 0,
 
   icon(btn, ic) {
     const cv = btn.querySelector('canvas'), g = cv.getContext('2d');
@@ -1616,6 +1854,21 @@ const UI = {
     this.icon(this.btnMarsh, ICONS.marsh);
     this.icon(this.btnTea, ICONS.tea);
     this.icon(this.btnSound, ICONS.soundOff);
+    this.btnFish = document.getElementById('btnFish');
+    this.btnBack = document.getElementById('btnBack');
+    this.badge = document.getElementById('fishBadge');
+    this.fishCount = document.getElementById('fishCount');
+    this.icon(this.btnFish, ICONS.rod);
+    this.icon(this.btnBack, ICONS.fire);
+    this.icon(this.badge, ICONS.fish);
+    // 들고 있는 물고기 수는 이 탭에서만 기억(새로고침은 유지, 탭을 닫으면 0)
+    try { const n = parseInt(sessionStorage.getItem('campfire-fish') || '0', 10); if (n > 0) this.fish = Math.min(CONFIG.fishMax, n); } catch (e) { /* 무시 */ }
+    this.btnFish.addEventListener('click', () => {
+      if (!this.canAct() || Me.place !== 'lake' || this.fish >= CONFIG.fishMax) return;
+      const wait = Math.round(rand(CONFIG.fishWait[0], CONFIG.fishWait[1]) * 10);   // 0.1초 단위로 맞춰 다른 화면에서도 같은 때에 잡힘
+      Net.act('fish', wait); Me.goFishing(wait / 10); this.refresh();
+    });
+    this.btnBack.addEventListener('click', () => this.travel('camp'));
 
     this.btnPotato.addEventListener('click', () => this.place('potato', 'putPotato'));
     this.btnMarsh.addEventListener('click', () => this.place('marsh', 'plantMarsh'));
@@ -1635,6 +1888,17 @@ const UI = {
   },
 
   canAct() { return Setup.started && Me.seated && !Me.busy && !Me.waiting; },
+  // 이동은 낚시하며 기다리는 중에도 할 수 있음(낚시를 접고 일어남)
+  canGo() { return Setup.started && Me.seated && !Me.waiting && (!Me.busy || Me.state === 'fish'); },
+  travel(dest) {
+    if (!this.canGo() || Me.place === dest) return;
+    Net.act('go', dest); Me.goTo(dest); this.refresh();
+  },
+  addFish() {
+    this.fish = Math.min(CONFIG.fishMax, this.fish + 1);
+    try { sessionStorage.setItem('campfire-fish', String(this.fish)); } catch (e) { /* 무시 */ }
+    this.refresh();
+  },
 
   // 고구마·마시멜로 올리기: 자리를 먼저 차지한 뒤(서버 확인) 동작을 시작
   place(kind, act) {
@@ -1711,10 +1975,19 @@ const UI = {
   // 동작 중이거나 자리가 꽉 차면 버튼을 흐리게 하고 못 누르게 함
   refresh() {
     const b = !this.canAct(), dp = b || Items.free('potato') < 0, dm = b || Items.free('marsh') < 0;
-    const key = (dp ? 1 : 0) + '' + (dm ? 1 : 0) + (b ? 1 : 0);
+    const lake = Scene.place === 'lake', df = b || this.fish >= CONFIG.fishMax, dg = !this.canGo();
+    const key = (dp ? 1 : 0) + '' + (dm ? 1 : 0) + (b ? 1 : 0) + (df ? 1 : 0) + (dg ? 1 : 0) + (lake ? 'L' : 'C') + this.fish;
     if (key === this.last) return;
     this.last = key;
     this.btnPotato.disabled = dp; this.btnMarsh.disabled = dm; this.btnTea.disabled = b;
+    this.btnFish.disabled = df; this.btnBack.disabled = dg;
+    // 있는 곳에 따라 버튼을 바꿔 보여 줌
+    const swap = this.btnFish.hidden === lake;
+    this.btnPotato.hidden = this.btnMarsh.hidden = this.btnTea.hidden = lake;
+    this.btnFish.hidden = this.btnBack.hidden = !lake;
+    this.badge.hidden = this.fish <= 0;
+    this.fishCount.textContent = '×' + this.fish;
+    if (swap) Scene.layout();
   },
 };
 
@@ -1808,6 +2081,7 @@ const Scene = {
   view: null, vctx: null, buf: null, ctx: null, bar: null,
   time: 0, last: 0, running: false, raf: 0,
   k: 1, left: 0, top: 0,
+  place: 'camp', fade: 0,   // 지금 보고 있는 곳, 화면 전환 때 어두워지는 정도(0~1)
 
   init() {
     this.view = document.getElementById('view');
@@ -1824,7 +2098,7 @@ const Scene = {
       if (mq.addEventListener) mq.addEventListener('change', onChange); else if (mq.addListener) mq.addListener(onChange);
     }
 
-    Sky.init(); Forest.init(); Campfire.init(); Items.init();
+    Sky.init(); Forest.init(); Campfire.init(); Lake.init(); Items.init();
     Me = new Actor(true);
     Net.init(); UI.init(); Setup.init();
 
@@ -1834,6 +2108,8 @@ const Scene = {
 
     // 꽂힌 마시멜로, 고구마 누르기
     this.view.addEventListener('pointerdown', e => {
+      // 표지판: 모닥불 ↔ 호수
+      if (this.signAt(e)) { UI.travel(this.place === 'camp' ? 'lake' : 'camp'); return; }
       const hit = this.pick(e);
       if (!hit || !UI.canAct()) return;
       if (hit.type === 'marsh') UI.take('marsh', 'eatMarsh', hit.index);
@@ -1842,7 +2118,7 @@ const Scene = {
       UI.refresh();
     });
     this.view.addEventListener('pointermove', e => {
-      this.view.style.cursor = (UI.canAct() && this.pick(e)) ? 'pointer' : 'default';
+      this.view.style.cursor = ((UI.canGo() && this.signAt(e)) || (UI.canAct() && this.pick(e))) ? 'pointer' : 'default';
     });
 
     // 탭이 숨겨지면 애니메이션을 멈추고, 돌아오면 다시 시작
@@ -1855,8 +2131,14 @@ const Scene = {
 
   // 화면 좌표 → 내부 해상도 좌표로 바꿔 아이템 찾기
   pick(e) {
+    if (this.place !== 'camp') return null;   // 굽는 것은 모닥불에서만
     const r = this.view.getBoundingClientRect();
     return Items.hitTest((e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H);
+  },
+
+  signAt(e) {
+    const r = this.view.getBoundingClientRect();
+    return this.fade === 0 && Lake.signHit(this.place, (e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H);
   },
 
   // 창 크기에 맞춰 정수 배율과 위치를 다시 계산(장면이 잘리지 않게, 가운데 정렬)
@@ -1886,7 +2168,7 @@ const Scene = {
   placeTags() {
     this.eachActor(a => {
       if (!a.bubble.hidden && this.time >= a.bubbleUntil) { a.bubble.hidden = true; a.tagKey = ''; }
-      const show = Setup.started && a.seated && (a.name !== '' || !a.bubble.hidden);
+      const show = Setup.started && a.seated && a.place === this.place && this.fade < 0.5 && (a.name !== '' || !a.bubble.hidden);
       const x = Math.round(this.left + (Math.round(a.x) + 7.5) * this.k);
       const y = Math.round(this.top + (CHAR_Y - 5) * this.k);
       const key = show ? x + ',' + y : 'off';
@@ -1934,20 +2216,30 @@ const Scene = {
   // 뒤에서 앞 순서로 그리기
   draw() {
     const ctx = this.ctx, t = this.time;
+    const here = fn => this.eachActor(a => { if (a.place === this.place) fn(a); });   // 같은 곳에 있는 캐릭터만
     Sky.draw(ctx, t);                       // 1. 밤하늘
-    Forest.drawFar(ctx);                    // 2. 먼 숲
-    Forest.drawNear(ctx, Campfire.flick);   // 3. 가까운 숲과 땅(불빛 범위만 따뜻하게)
-    this.eachActor(a => a.drawLog(ctx));    // 5. 통나무 의자
-    Campfire.drawBack(ctx, t);              // 4. 모닥불
-    Campfire.drawFlames(ctx);
-    Items.drawPotatoes(ctx, t);
-    Campfire.drawFront(ctx);
-    Items.drawSkewers(ctx);
-    this.eachActor(a => a.draw(ctx, t));    // 5. 캐릭터(내 캐릭터가 맨 앞)
-    Items.drawFly(ctx, t);
-    Campfire.drawParticles(ctx);            //    불티, 연기, 김
-    Forest.drawFlies(ctx, t);               // 6. 반딧불이
-    Campfire.drawGlow(ctx);                 //    따뜻한 빛 번짐
+    if (this.place === 'lake') {
+      Lake.draw(ctx, t);                    // 호수: 달, 건너편 숲, 물결, 낚시터
+      here(a => a.drawLog(ctx));
+      here(a => a.draw(ctx, t));
+      Forest.drawFlies(ctx, t);
+    } else {
+      Forest.drawFar(ctx);                    // 2. 먼 숲
+      Forest.drawNear(ctx, Campfire.flick);   // 3. 가까운 숲과 땅(불빛 범위만 따뜻하게)
+      Lake.drawSign(ctx, 'camp');             //    호수로 가는 표지판
+      here(a => a.drawLog(ctx));              // 5. 통나무 의자
+      Campfire.drawBack(ctx, t);              // 4. 모닥불
+      Campfire.drawFlames(ctx);
+      Items.drawPotatoes(ctx, t);
+      Campfire.drawFront(ctx);
+      Items.drawSkewers(ctx);
+      here(a => a.draw(ctx, t));              // 5. 캐릭터(내 캐릭터가 맨 앞)
+      Items.drawFly(ctx, t);
+      Campfire.drawParticles(ctx);            //    불티, 연기, 김
+      Forest.drawFlies(ctx, t);               // 6. 반딧불이
+      Campfire.drawGlow(ctx);                 //    따뜻한 빛 번짐
+    }
+    if (this.fade > 0) { ctx.globalAlpha = this.fade; ctx.fillStyle = '#05071a'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
 
     // 작은 캔버스를 큰 캔버스로 정수 배율 확대
     this.vctx.imageSmoothingEnabled = false;
