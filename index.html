@@ -11,7 +11,16 @@
   /* 확대해서 보여 주는 큰 캔버스: 픽셀이 뭉개지지 않게 */
   #view { position: absolute; display: block; image-rendering: crisp-edges; image-rendering: pixelated; }
   /* 하단 버튼 줄 */
-  #bar { position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; white-space: nowrap; }
+  #bar { position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap; }
+  .btns { display: flex; gap: 14px; justify-content: center; }
+  /* 채팅 입력 줄(함께 보기일 때만 보임) */
+  #chatRow { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+  #chatRow[hidden] { display: none; }
+  #chatInput { box-sizing: border-box; width: 200px; margin: 3px; padding: 8px; border: 0; border-radius: 0; background: #0e0d22; color: #f4e6c8;
+               font: 16px/1.2 inherit; font-family: inherit; box-shadow: 0 0 0 2px #3b3364; }
+  #chatInput:focus { outline: 2px solid #ffd84a; }
+  #chatSend { padding: 6px 12px; }
+  #status { position: absolute; top: 14px; left: 14px; color: #c8c0e0; font: 12px/1.2 inherit; font-family: inherit; text-shadow: 1px 1px 0 #05071a; pointer-events: none; }
   .px { display: flex; align-items: center; gap: 6px; min-height: 44px; margin: 3px; padding: 6px 12px 6px 8px;
         border: 0; border-radius: 0; background: #1d1b38; color: #f4e6c8; font: bold 14px/1 inherit; font-family: inherit;
         cursor: pointer; transition: opacity .35s;
@@ -24,8 +33,13 @@
   #sound { position: absolute; top: 10px; right: 10px; min-height: 40px; padding: 6px; margin: 3px; }
   #sound canvas { width: 24px; height: 24px; }
   /* 캐릭터 머리 위 이름표 */
-  #nameTag { position: absolute; transform: translate(-50%, -100%); white-space: nowrap; pointer-events: none;
-             color: #f4e6c8; font: bold 12px/1.2 inherit; font-family: inherit; text-shadow: 1px 1px 0 #05071a, -1px 0 0 #05071a, 0 -1px 0 #05071a; }
+  .tag { position: absolute; transform: translate(-50%, -100%); text-align: center; white-space: nowrap; pointer-events: none; }
+  .tag[hidden] { display: none; }
+  .tag .name { color: #f4e6c8; font: bold 12px/1.2 inherit; font-family: inherit; text-shadow: 1px 1px 0 #05071a, -1px 0 0 #05071a, 0 -1px 0 #05071a; }
+  .tag .bubble { display: inline-block; max-width: 170px; margin-bottom: 4px; padding: 4px 7px; white-space: normal; word-break: break-all;
+                 background: #f4e6c8; color: #1d1b38; font: bold 12px/1.3 inherit; font-family: inherit;
+                 box-shadow: 0 -2px 0 #f4e6c8, -2px 0 0 #f4e6c8, 2px 0 0 #b8a888, 0 2px 0 #b8a888; }
+  .tag .bubble[hidden] { display: none; }
   /* 첫 진입 설정 창 */
   #setup { position: absolute; inset: 0; z-index: 5; display: flex; overflow: auto; background: rgba(5, 7, 26, .72); }
   #setup[hidden] { display: none; }
@@ -42,17 +56,24 @@
   .sw[aria-pressed="true"] { box-shadow: 0 0 0 2px #1d1b38, 0 0 0 4px #ffd84a; }
   .sw:focus-visible { outline: 2px solid #ffffff; outline-offset: 4px; }
   #btnStart { margin: 16px auto 0; padding: 6px 22px; justify-content: center; }
-  @media (max-width: 380px) { #bar { gap: 9px; } .px { font-size: 12px; padding: 6px 8px 6px 6px; gap: 4px; } .px canvas { width: 24px; height: 24px; } }
+  @media (max-width: 380px) { .btns { gap: 9px; } #chatInput { width: 160px; } .px { font-size: 12px; padding: 6px 8px 6px 6px; gap: 4px; } .px canvas { width: 24px; height: 24px; } }
 </style>
 </head>
 <body>
 <canvas id="view" aria-label="밤 숲속 모닥불 장면"></canvas>
 <button id="sound" class="px" aria-label="소리 켜기/끄기" aria-pressed="false"><canvas width="12" height="12"></canvas></button>
-<div id="nameTag"></div>
+<div id="tags"></div>
+<div id="status" aria-live="polite"></div>
 <div id="bar" style="visibility:hidden">
-  <button id="btnPotato" class="px"><canvas width="16" height="16"></canvas><span>고구마</span></button>
-  <button id="btnMarsh" class="px"><canvas width="16" height="16"></canvas><span>마시멜로</span></button>
-  <button id="btnTea" class="px"><canvas width="16" height="16"></canvas><span>차 마시기</span></button>
+  <div class="btns">
+    <button id="btnPotato" class="px"><canvas width="16" height="16"></canvas><span>고구마</span></button>
+    <button id="btnMarsh" class="px"><canvas width="16" height="16"></canvas><span>마시멜로</span></button>
+    <button id="btnTea" class="px"><canvas width="16" height="16"></canvas><span>차 마시기</span></button>
+  </div>
+  <div id="chatRow" hidden>
+    <input id="chatInput" type="text" placeholder="한마디 건네기" autocomplete="off" aria-label="채팅 입력">
+    <button id="chatSend" class="px">보내기</button>
+  </div>
 </div>
 <div id="setup" role="dialog" aria-label="캐릭터 설정">
   <div class="panel">
@@ -66,6 +87,8 @@
     <button id="btnStart" class="px">시작하기</button>
   </div>
 </div>
+<!-- 함께 보기용 Supabase 라이브러리. 불러오지 못하면 혼자 보기로 동작 -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 'use strict';
 
@@ -98,6 +121,15 @@ const CONFIG = {
   blinkInterval: [3, 6],         // 눈 깜빡임 간격(초)
   warmHandsInterval: [12, 24],   // 손 쬐기 간격(초)
   breathPeriod: 3.6,             // 숨 한 번 주기(초)
+
+  // ── 함께 보기(Supabase). 주소를 비워 두면 혼자 보기로 동작 ──
+  supabaseUrl: 'https://skbernhrsynjavjqvgom.supabase.co',               // Project URL (https://xxxx.supabase.co)
+  supabaseKey: 'sb_publishable_poAKr4vXDgAPhpVD1n36aQ_N9rzej3z', // 공개 키(publishable). 비밀 키는 절대 넣지 말 것
+  room: 'campfire',              // 방 이름(같은 이름끼리 만남)
+  maxPlayers: 6,                 // 불 둘레에 앉을 수 있는 인원(최대 6)
+  chatMaxLength: 40,             // 채팅 한 번에 쓸 수 있는 글자 수
+  chatBubbleSeconds: 5,          // 말풍선이 떠 있는 시간(초)
+  staleMinutes: 30,              // 이 시간(분)보다 오래 방치된 고구마·마시멜로는 치움
 
   // ── 첫 화면 설정 ──
   nameMaxLength: 8,              // 이름 최대 글자 수
@@ -221,15 +253,16 @@ function fillEllipse(ctx, cx, cy, rx, ry) {
   }
 }
 
-// 문자열 스프라이트 그리기. flip이면 좌우를 뒤집고 밝은 쪽/그늘 쪽도 바꿈
-function drawSprite(ctx, rows, pal, x, y, flip) {
+// 문자열 스프라이트 그리기. flip이면 좌우를 뒤집고, swap이면 밝은 쪽(대문자)/그늘 쪽(소문자) 색을 맞바꿈
+function drawSprite(ctx, rows, pal, x, y, flip, swap) {
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r], n = row.length;
     for (let c = 0; c < n; c++) {
       let ch = row[c];
       if (ch === '.') continue;
       let cx = c;
-      if (flip) { cx = n - 1 - c; const u = ch.toUpperCase(); ch = (ch === u) ? ch.toLowerCase() : u; }
+      if (flip) cx = n - 1 - c;
+      if (swap) { const u = ch.toUpperCase(); ch = (ch === u) ? ch.toLowerCase() : u; }
       ctx.fillStyle = pal[ch];
       ctx.fillRect(x + cx, y + r, 1, 1);
     }
@@ -677,12 +710,15 @@ const Campfire = {
 };
 
 /* =====================================================================
- * Items — 고구마(불 속)와 마시멜로 꼬챙이(불 둘레)
+ * Items — 고구마(불 속)와 마시멜로 꼬챙이(불 둘레). 모두가 함께 보는 상태
  * ===================================================================== */
 const HALF_SPR = ['FYy', 'FYY', '.FF'];
 const HALF_PAL = { F: P.foil, Y: P.potatoIn, y: P.potatoInHi };
 const MUG_SPR = ['MMM.', 'RRRm', 'MMMm', 'MMM.'];
 const MUG_PAL = { M: '#e8dcc8', R: '#c8463c', m: '#a89c8c' };
+
+// 시계: 익는 시간은 서버 시각 기준으로 계산해야 모두에게 똑같이 보임
+const Clock = { offset: 0, now() { return Date.now() + this.offset; } };
 
 const Items = {
   // 불 속 고구마 자리(왼쪽 위 좌표)
@@ -694,16 +730,54 @@ const Items = {
     { bx: 136, by: 150, tx: 145, ty: 136, side: -1 },
     { bx: 184, by: 150, tx: 175, ty: 136, side: 1 },
   ].slice(0, Math.max(1, Math.min(4, CONFIG.marshmallowMax))),
-  potatoes: [], marsh: [], fly: null, accSteam: 0,
+  // 자리마다: at = 올린 시각(ms, 없으면 null), hide = 캐릭터가 올리는 중이라 아직 안 보임,
+  //          ghost = 누가 집어 가는 중이라 잠깐 남겨 둔 모습
+  slots: { potato: [], marsh: [] },
+  fly: null, accSteam: 0,
 
   init() {
-    this.potatoes = this.potatoSlots.map(() => null);
-    this.marsh = this.marshSlots.map(() => null);
+    const mk = () => ({ at: null, showAt: 0, hide: false, ghost: null, claim: false });
+    this.slots.potato = this.potatoSlots.map(mk);
+    this.slots.marsh = this.marshSlots.map(mk);
   },
 
-  freePotato() { return this.potatoes.indexOf(null); },
-  freeMarsh() { return this.marsh.indexOf(null); },
-  isRipe(i) { const p = this.potatoes[i]; return !!p && p.age >= CONFIG.potatoCookTime; },
+  slot(kind, i) { const a = this.slots[kind]; return a ? a[i] : undefined; },
+
+  // 자리에 올라감(서버 알림 또는 내가 올림). delay는 남이 올리는 동작이 도착하길 잠깐 기다리는 시간
+  setRow(kind, i, at, delay) {
+    const s = this.slot(kind, i); if (!s) return;
+    if (s.at === null) s.showAt = Clock.now() + (delay || 0);
+    s.at = at; s.ghost = null; s.claim = false;
+  },
+  // 자리에서 사라짐. 누가 가지러 오는 중일 수 있어 보이던 것은 잠깐 남겨 둠
+  removeRow(kind, i) {
+    const s = this.slot(kind, i); if (!s || s.at === null) return;
+    if (this.visible(kind, i)) s.ghost = { age: this.age(kind, i), exp: Clock.now() + (s.claim ? 20000 : 1500), claimed: s.claim };
+    s.claim = false; s.at = null; s.hide = false;
+  },
+  // 어떤 캐릭터가 이 자리 것을 가지러 감
+  claim(kind, i) {
+    const s = this.slot(kind, i); if (!s) return;
+    if (s.ghost) { s.ghost.claimed = true; s.ghost.exp = Clock.now() + 20000; } else if (s.at !== null) s.claim = true;
+  },
+  clearGhost(kind, i) { const s = this.slot(kind, i); if (s) { s.ghost = null; s.claim = false; } },
+  hide(kind, i) { const s = this.slot(kind, i); if (s) s.hide = true; },
+  land(kind, i) { const s = this.slot(kind, i); if (s) s.hide = false; },
+
+  visible(kind, i) {
+    const s = this.slot(kind, i); if (!s) return false;
+    if (s.ghost) return true;
+    return s.at !== null && !s.hide && Clock.now() >= s.showAt;
+  },
+  age(kind, i) {
+    const s = this.slot(kind, i); if (!s) return 0;
+    if (s.ghost) return s.ghost.age;
+    return s.at === null ? 0 : Math.max(0, (Clock.now() - s.at) / 1000);
+  },
+  free(kind) { return this.slots[kind].findIndex(s => s.at === null && !s.ghost && !s.hide); },
+  // 집을 수 있는 상태인지(실제로 자리에 있고 화면에 보임)
+  pickable(kind, i) { const s = this.slot(kind, i); return !!s && s.at !== null && !s.ghost && !s.claim && this.visible(kind, i); },
+  isRipe(i) { return this.pickable('potato', i) && this.age('potato', i) >= CONFIG.potatoCookTime; },
 
   // 마시멜로 색: 흰색 → 노릇한 갈색 → 짙은 갈색
   marshColor(age) {
@@ -717,26 +791,24 @@ const Items = {
   startFly(x0, y0, x1, y1, d, onDone) { this.fly = { x0, y0, x1, y1, d, age: 0, onDone }; },
 
   update(dt) {
-    for (const p of this.potatoes) if (p) p.age += dt;
-    for (const m of this.marsh) if (m) m.age += dt;
-
     if (this.fly) {
       this.fly.age += dt;
       if (this.fly.age >= this.fly.d) { const f = this.fly; this.fly = null; if (f.onDone) f.onDone(); }
     }
+    // 아무도 가지러 오지 않는 잔상은 곧 지움
+    const now = Clock.now();
+    for (const kind of ['potato', 'marsh']) for (const s of this.slots[kind]) if (s.ghost && now >= s.ghost.exp) s.ghost = null;
 
     // 다 익은 고구마의 김, 타기 직전 마시멜로의 작은 연기
     this.accSteam += dt * Motion.factor;
     if (this.accSteam > 0.4) {
       this.accSteam = 0;
-      this.potatoes.forEach((p, i) => {
-        if (this.isRipe(i)) Campfire.puff(this.potatoSlots[i][0] + 2 + rand(-1, 1), this.potatoSlots[i][1] - 1, rand(-1, 1), -rand(7, 10), 1.6, 1, 2, 0.55, '#ffffff');
+      this.potatoSlots.forEach((p, i) => {
+        if (this.isRipe(i)) Campfire.puff(p[0] + 2 + rand(-1, 1), p[1] - 1, rand(-1, 1), -rand(7, 10), 1.6, 1, 2, 0.55, '#ffffff');
       });
-      this.marsh.forEach((m, i) => {
-        if (m && m.age > CONFIG.marshmallowBurnTime && Math.random() < 0.6) {
-          const s = this.marshSlots[i];
+      this.marshSlots.forEach((s, i) => {
+        if (this.visible('marsh', i) && this.age('marsh', i) > CONFIG.marshmallowBurnTime && Math.random() < 0.6)
           Campfire.puff(s.tx, s.ty - 2, rand(-1, 1), -rand(5, 8), 1.8, 1, 2, 0.4, '#b0acc0');
-        }
       });
     }
   },
@@ -752,9 +824,8 @@ const Items = {
   },
 
   drawPotatoes(ctx, t) {
-    this.potatoes.forEach((p, i) => {
-      if (!p) return;
-      const s = this.potatoSlots[i];
+    this.potatoSlots.forEach((s, i) => {
+      if (!this.visible('potato', i)) return;
       this.drawPotato(ctx, s[0], s[1], t, i);
       if (this.isRipe(i)) { // "다 익었다" 반짝임
         const k = Math.sin(t * 4 + i);
@@ -782,10 +853,8 @@ const Items = {
   },
 
   drawSkewers(ctx) {
-    this.marsh.forEach((m, i) => {
-      if (!m) return;
-      const s = this.marshSlots[i];
-      this.drawSkewer(ctx, s.bx, s.by, s.tx, s.ty, this.marshColor(m.age));
+    this.marshSlots.forEach((s, i) => {
+      if (this.visible('marsh', i)) this.drawSkewer(ctx, s.bx, s.by, s.tx, s.ty, this.marshColor(this.age('marsh', i)));
     });
   },
 
@@ -798,14 +867,14 @@ const Items = {
   // 누른 자리에 있는 아이템 찾기(손가락으로도 누르기 쉽게 넉넉한 범위)
   hitTest(x, y) {
     let best = null, bd = 9;
-    this.marsh.forEach((m, i) => {
-      if (!m) return;
-      const s = this.marshSlots[i], d = Math.hypot(x - s.tx, y - s.ty);
+    this.marshSlots.forEach((s, i) => {
+      if (!this.pickable('marsh', i)) return;
+      const d = Math.hypot(x - s.tx, y - s.ty);
       if (d < bd) { bd = d; best = { type: 'marsh', index: i }; }
     });
-    this.potatoes.forEach((p, i) => {
-      if (!p) return;
-      const s = this.potatoSlots[i], d = Math.hypot(x - (s[0] + 2), y - (s[1] - 1));
+    this.potatoSlots.forEach((s, i) => {
+      if (!this.pickable('potato', i)) return;
+      const d = Math.hypot(x - (s[0] + 2), y - (s[1] - 1));
       if (d < bd) { bd = d; best = { type: this.isRipe(i) ? 'potato' : 'potatoRaw', index: i }; } // 덜 익은 고구마는 따로 구분
     });
     return best;
@@ -813,7 +882,7 @@ const Items = {
 };
 
 /* =====================================================================
- * Character — 픽셀 캐릭터와 동작 상태 머신
+ * Character — 픽셀 캐릭터(Actor)와 동작 상태 머신
  * ===================================================================== */
 const HEAD = [
   '......PP........',
@@ -861,48 +930,88 @@ const ARMS = {
   down:     { px: [[7,12,'D'],[8,12,'D'],[8,13,'D'],[9,13,'D'],[9,14,'D'],[10,14,'D'],[10,15,'D'],[11,15,'D'],[11,16,'D'],[12,16,'S'],[12,17,'S']], hand: [12, 17], item: [12, 15] },
 };
 
-const HOME_X = 112;   // 통나무에 앉는 자리(스프라이트 왼쪽 x)
 const CHAR_Y = 128;   // 앉은 스프라이트 위쪽 y(발끝이 152)
+// 앉는 자리(스프라이트 왼쪽 x). 불 왼쪽·오른쪽을 번갈아 채움. 오른쪽 자리는 좌우를 뒤집어 불을 봄
+const SEATS = [112, 192, 90, 214, 68, 236].slice(0, Math.max(1, Math.min(6, CONFIG.maxPlayers)));
+const DEFAULT_OUTFIT = { hat: CONFIG.outfitColors.hat[0][0], coat: CONFIG.outfitColors.coat[0][0], pants: CONFIG.outfitColors.pants[0][0] };
 
-const Character = {
-  x: HOME_X, pose: 'sit', flip: false, arm: 'rest', eyes: 'open', headDx: 0, chew: 0, rise: 0,
-  held: null, heldAge: 0, plant: null, plantSlot: null, mugOnLog: true,
-  busy: false, state: 'idle', script: null, si: 0, st: 0, stepDone: false,
-  walking: false, walkT: 0, bob: 0,
-  blinkT: 4, blinkHold: 0, warmT: 10, warming: 0, steamAcc: 0,
+// 캐릭터 한 명. 나(isMe)와 다른 접속자가 같은 클래스를 씀
+class Actor {
+  constructor(isMe) {
+    this.isMe = isMe; this.id = ''; this.name = '';
+    this.seat = 0; this.seated = true; this.homeX = SEATS[0]; this.homeFlip = false;
+    this.pal = Object.assign({}, P.char);
+    this.x = this.homeX; this.pose = 'sit'; this.flip = false; this.arm = 'rest'; this.eyes = 'open';
+    this.headDx = 0; this.chew = 0; this.rise = 0;
+    this.held = null; this.heldAge = 0; this.plant = null; this.plantSlot = null; this.mugOnLog = true;
+    this.busy = false; this.waiting = false; this.state = 'idle'; this.script = null; this.si = 0; this.st = 0; this.stepDone = false;
+    this.target = null;      // 지금 동작이 다루는 자리 { kind, slot, eat }
+    this.walking = false; this.walkT = 0; this.bob = 0;
+    this.blinkT = rand(CONFIG.blinkInterval[0], CONFIG.blinkInterval[1]); this.blinkHold = 0;
+    this.warmT = rand(6, 12); this.warming = 0; this.steamAcc = 0;
+    // 머리 위 이름표와 말풍선
+    this.tag = document.createElement('div'); this.tag.className = 'tag';
+    this.bubble = document.createElement('div'); this.bubble.className = 'bubble'; this.bubble.hidden = true;
+    this.label = document.createElement('div'); this.label.className = 'name';
+    this.tag.appendChild(this.bubble); this.tag.appendChild(this.label);
+    this.tag.hidden = true; this.tagKey = ''; this.bubbleUntil = 0;
+    document.getElementById('tags').appendChild(this.tag);
+  }
 
-  init() {
-    this.blinkT = rand(CONFIG.blinkInterval[0], CONFIG.blinkInterval[1]);
-    this.warmT = rand(6, 12);
-  },
+  // 고른 색을 팔레트에 반영(밝은 쪽 색에서 그늘 쪽 색을 만들어 냄)
+  setOutfit(o) {
+    const c = this.pal;
+    c.H = o.hat;   c.h = shade(o.hat, '#1a1030', 0.5);
+    c.B = o.coat;  c.b = shade(o.coat, '#0a1028', 0.55);
+    c.D = shade(o.coat, '#ffffff', 0.18); c.d = shade(c.b, '#ffffff', 0.12);
+    c.L = o.pants; c.l = shade(o.pants, '#0a0a20', 0.5);
+  }
+
+  // 자리 정하기. null이면 자리가 없어 구경만 함
+  setSeat(seat) {
+    if (this.script) this.finish();
+    this.seat = seat; this.seated = seat !== null && seat !== undefined && seat < SEATS.length;
+    if (!this.seated) return;
+    this.homeX = SEATS[seat]; this.homeFlip = this.homeX + 8 > CONFIG.fireX;
+    this.x = this.homeX; this.flip = this.homeFlip; this.tagKey = '';
+  }
+
+  setName(name) { this.name = name; this.label.textContent = name; this.tagKey = ''; }
+  say(text, time) { this.bubble.textContent = text; this.bubble.hidden = false; this.bubbleUntil = time + CONFIG.chatBubbleSeconds; this.tagKey = ''; }
+  remove() { if (this.script) this.finish(); this.tag.remove(); }
 
   // ── 좌표 도우미 ──
-  lx(col) { return Math.round(this.x) + (this.flip ? 15 - col : col); },       // 캐릭터 안쪽 열 → 화면 x
-  originY() { return this.pose === 'stand' ? CHAR_Y - 2 + this.rise + this.walkBob() : CHAR_Y + this.bob; },
-  walkBob() { return (this.walking && ((this.walkT * 5) | 0) % 2 === 0) ? 1 : 0; },
-  handPos() { const a = ARMS[this.arm]; return [this.lx(a.hand[0]), this.originY() + a.hand[1]]; },
+  lx(col) { return Math.round(this.x) + (this.flip ? 15 - col : col); }       // 캐릭터 안쪽 열 → 화면 x
+  mx(x) { return this.homeFlip ? 304 - x : x; }                               // 불 오른쪽 자리면 좌우 대칭 위치
+  originY() { return this.pose === 'stand' ? CHAR_Y - 2 + this.rise + this.walkBob() : CHAR_Y + this.bob; }
+  walkBob() { return (this.walking && ((this.walkT * 5) | 0) % 2 === 0) ? 1 : 0; }
 
   // ── 상태 머신: 동작은 "단계(step)" 목록이고, 다 끝나면 기본 상태로 돌아감 ──
-  run(name, steps) {
+  run(name, steps, target) {
+    if (this.script) this.finish();
     this.state = name; this.script = steps; this.si = 0; this.st = 0; this.stepDone = false;
+    this.target = target || null;
     this.busy = true; this.warming = 0; this.eyes = 'open';
     if (steps[0].enter) steps[0].enter();
-  },
+  }
   finish() {
+    // 동작이 중간에 끊겨도 자리 상태가 꼬이지 않게 정리
+    if (this.target) { if (this.target.eat) Items.clearGhost(this.target.kind, this.target.slot); else Items.land(this.target.kind, this.target.slot); }
+    this.target = null;
     this.script = null; this.state = 'idle'; this.busy = false;
-    this.x = HOME_X; this.pose = 'sit'; this.flip = false; this.arm = 'rest'; this.eyes = 'open';
+    this.x = this.homeX; this.pose = 'sit'; this.flip = this.homeFlip; this.arm = 'rest'; this.eyes = 'open';
     this.headDx = 0; this.chew = 0; this.rise = 0; this.held = null; this.plant = null; this.walking = false; this.mugOnLog = true;
     this.warmT = rand(CONFIG.warmHandsInterval[0], CONFIG.warmHandsInterval[1]);
-  },
+  }
 
   // 단계 만들기 도우미
-  set(d, props, extra) { const s = { d, enter: () => Object.assign(this, props) }; return Object.assign(s, extra || {}); },
-  standUp() { return { d: 0.4, enter: () => { this.pose = 'stand'; }, update: p => { this.rise = p < 0.5 ? 1 : 0; } }; },
-  sitDown(arm) { return { d: 0.35, enter: () => { this.pose = 'sit'; this.flip = false; this.walking = false; this.x = HOME_X; this.arm = arm || 'rest'; } }; },
+  set(d, props, extra) { const s = { d, enter: () => Object.assign(this, props) }; return Object.assign(s, extra || {}); }
+  standUp() { return { d: 0.4, enter: () => { this.pose = 'stand'; }, update: p => { this.rise = p < 0.5 ? 1 : 0; } }; }
+  sitDown(arm) { return { d: 0.35, enter: () => { this.pose = 'sit'; this.flip = this.homeFlip; this.walking = false; this.x = this.homeX; this.arm = arm || 'rest'; } }; }
   walkTo(tx) {
     return {
       d: Infinity,
-      enter: () => { this.pose = 'stand'; this.walking = true; this.walkT = 0; this.flip = tx < this.x; },
+      enter: () => { this.pose = 'stand'; this.walking = true; this.walkT = 0; if (tx !== this.x) this.flip = tx < this.x; },
       update: (p, dt) => {
         const dir = Math.sign(tx - this.x), step = CONFIG.walkSpeed * dt;
         if (Math.abs(tx - this.x) <= step) { this.x = tx; this.stepDone = true; }
@@ -911,7 +1020,17 @@ const Character = {
       },
       exit: () => { this.walking = false; },
     };
-  },
+  }
+
+  // 다른 접속자의 동작을 이름으로 실행
+  perform(kind, slot) {
+    if (kind === 'tea') this.drinkTea();
+    else if (kind === 'notYet') this.notYet();
+    else if (kind === 'putPotato') this.putPotato(slot);
+    else if (kind === 'eatPotato') this.eatPotato(slot);
+    else if (kind === 'plantMarsh') this.plantMarsh(slot);
+    else if (kind === 'eatMarsh') this.eatMarsh(slot);
+  }
 
   // ── 차 마시기(약 7.5초) ──
   drinkTea() {
@@ -922,58 +1041,59 @@ const Character = {
       ...sip(), ...sip(), ...sip(),                                          // 홀짝 3번(고개가 살짝 뒤로)
       { d: 1.2, enter: () => {                                               // "후—" 입김, 편안한 표정
           this.eyes = 'happy';
-          const n = Motion.reduced ? 2 : 6;
-          for (let i = 0; i < n; i++) Campfire.puff(this.lx(13) + i * 0.6, CHAR_Y + 9, rand(7, 13), rand(-2.5, 0), rand(0.8, 1.3), 1, 3, 0.5, '#ffffff');
+          const n = Motion.reduced ? 2 : 6, dir = this.flip ? -1 : 1;
+          for (let i = 0; i < n; i++) Campfire.puff(this.lx(13) + dir * i * 0.6, CHAR_Y + 9, dir * rand(7, 13), rand(-2.5, 0), rand(0.8, 1.3), 1, 3, 0.5, '#ffffff');
         } },
       this.set(1.2, { arm: 'cupLap' }),                                      // 컵을 무릎 위에 둔 채 잠깐
       this.set(0.55, { arm: 'back', held: null, mugOnLog: true }),           // 내려놓기
     ]);
-  },
+  }
 
   // ── 고구마 넣기 ──
   putPotato(i) {
-    const slot = Items.potatoSlots[i];
+    const slot = Items.potatoSlots[i]; if (!slot) return;
+    Items.hide('potato', i);                                                 // 던져 넣기 전까지는 불 속에 안 보임
     this.run('potato', [
       this.set(0.9, { arm: 'hold', held: 'potato' }),                        // 은박지 고구마를 꺼내 듦
       this.standUp(),
-      this.walkTo(122),
+      this.walkTo(this.mx(122)),
       this.set(0.3, {}),
       { d: 0.7, enter: () => {                                               // 불 속으로 살짝 던짐
           const h = [this.lx(12), this.originY() + 11];
           this.held = null; this.arm = 'reach';
           Items.startFly(h[0], h[1], slot[0], slot[1], 0.6, () => {
-            Items.potatoes[i] = { age: 0 };
+            Items.land('potato', i);
             Campfire.burst(14, slot[0] + 2, slot[1] - 1);                    // 불티가 확 튐
           });
         } },
       this.set(0.7, { arm: 'rest' }),
-      this.walkTo(HOME_X),
+      this.walkTo(this.homeX),
       this.sitDown(),
-    ]);
-  },
+    ], { kind: 'potato', slot: i, eat: false });
+  }
 
   // ── 다 익은 고구마 꺼내 먹기 ──
   eatPotato(i) {
-    const slot = Items.potatoSlots[i];
+    const slot = Items.potatoSlots[i]; if (!slot) return;
     const bite = held => [this.set(0.45, { arm: 'mouth', held }), this.set(0.45, { arm: 'hold', chew: 1 }, { exit: () => { this.chew = 0; } })];
     this.run('eatPotato', [
       this.standUp(),
-      this.walkTo(124),
+      this.walkTo(this.mx(124)),
       { d: 0.6, enter: () => {                                               // 불에서 꺼냄
           this.arm = 'down';
-          Items.potatoes[i] = null;
+          Items.clearGhost('potato', i);
           Campfire.burst(5, slot[0] + 2, slot[1] - 1);
           Items.startFly(slot[0], slot[1], this.lx(12), this.originY() + 11, 0.55, null);
         }, exit: () => { this.arm = 'hold'; this.held = 'potato'; } },
       this.set(0.3, {}),
-      this.walkTo(HOME_X),
+      this.walkTo(this.homeX),
       this.sitDown('hold'),
       this.set(0.5, {}),
       this.set(0.9, { held: 'halves' }),                                     // 반으로 갈라 노란 속을 보임
       ...bite('halves'), ...bite('half'), ...bite('half'),
       this.set(1.4, { arm: 'rest', held: null, eyes: 'happy' }),
-    ]);
-  },
+    ], { kind: 'potato', slot: i, eat: true });
+  }
 
   // ── 덜 익은 고구마를 눌렀을 때: "아직이야" 하고 고개를 젓기 ──
   notYet() {
@@ -982,14 +1102,15 @@ const Character = {
       this.set(0.22, { headDx: -1 }), this.set(0.22, { headDx: 1 }),
       this.set(0.3, { headDx: 0 }),
     ]);
-  },
+  }
 
   // 꼬챙이를 꽂거나 뽑을 때 서는 자리
-  skewerSpot(slot) { return slot.side < 0 ? 120 : 185; },
+  skewerSpot(slot) { return slot.side < 0 ? 120 : 185; }
 
   // ── 마시멜로 꽂기 ──
   plantMarsh(i) {
-    const slot = Items.marshSlots[i];
+    const slot = Items.marshSlots[i]; if (!slot) return;
+    Items.hide('marsh', i);                                                  // 꽂기 전까지는 자리에 안 보임
     this.run('marsh', [
       this.set(0.7, { arm: 'hold', held: 'stick' }),                         // 나뭇가지 꼬챙이
       this.set(0.8, { held: 'stickM', heldAge: 0 }),                         // 하얀 마시멜로를 끼움
@@ -998,40 +1119,41 @@ const Character = {
       { d: 0.3, enter: () => { this.flip = slot.side > 0; this.arm = 'down'; } },
       { d: 0.7, enter: () => { this.plantSlot = slot; this.plant = 0; },     // 땅에 비스듬히 꽂음
         update: p => { this.plant = p; },
-        exit: () => { this.plant = null; this.held = null; Items.marsh[i] = { age: 0 }; } },
+        exit: () => { this.plant = null; this.held = null; Items.land('marsh', i); } },
       this.set(0.5, { arm: 'rest' }),
-      this.walkTo(HOME_X),
+      this.walkTo(this.homeX),
       this.sitDown(),
-    ]);
-  },
+    ], { kind: 'marsh', slot: i, eat: false });
+  }
 
   // ── 꽂힌 마시멜로 가져와 먹기 ──
   eatMarsh(i) {
-    const slot = Items.marshSlots[i];
+    const slot = Items.marshSlots[i]; if (!slot) return;
     this.run('eatMarsh', [
       this.standUp(),
       this.walkTo(this.skewerSpot(slot)),
       { d: 0.3, enter: () => { this.flip = slot.side > 0; this.arm = 'down'; } },
       { d: 0.6, enter: () => {                                               // 뽑아 듦
-          this.heldAge = Items.marsh[i].age; Items.marsh[i] = null;
+          this.heldAge = Items.age('marsh', i); Items.clearGhost('marsh', i);
           this.held = 'stickM'; this.plantSlot = slot; this.plant = 1;
         },
         update: p => { this.plant = 1 - p; },
         exit: () => { this.plant = null; this.arm = 'hold'; } },
       this.set(0.3, {}),
-      this.walkTo(HOME_X),
+      this.walkTo(this.homeX),
       this.sitDown('hold'),
       this.set(0.5, {}),
       this.set(0.7, { arm: 'mouth' }),                                       // 한 입
       this.set(0.3, { arm: 'hold', held: 'stick', chew: 1 }),
       this.set(0.3, { chew: 0 }), this.set(0.3, { chew: 1 }), this.set(0.3, { chew: 0 }),
       this.set(1.3, { arm: 'rest', held: null, eyes: 'happy' }),
-    ]);
-  },
+    ], { kind: 'marsh', slot: i, eat: true });
+  }
 
   update(dt, t) {
-    // 숨쉬기: 앉아 있을 때 윗몸이 1px 오르내림
-    this.bob = (this.pose === 'sit' && Math.sin(t * TAU / CONFIG.breathPeriod) < 0) ? 1 : 0;
+    if (!this.seated) return;
+    // 숨쉬기: 앉아 있을 때 윗몸이 1px 오르내림(자리마다 박자가 조금 다름)
+    this.bob = (this.pose === 'sit' && Math.sin(t * TAU / CONFIG.breathPeriod + this.seat * 0.9) < 0) ? 1 : 0;
 
     // 눈 깜빡임(3~6초마다)
     if (this.blinkHold > 0) this.blinkHold -= dt;
@@ -1069,43 +1191,53 @@ const Character = {
         Campfire.puff(this.lx(a[0] + 1) + rand(-1, 1), this.originY() + a[1] - 1, rand(-1, 1), -rand(5, 8), rand(0.9, 1.4), 1, 2, 0.5, '#ffffff');
       }
     }
-  },
+  }
 
-  // 통나무 의자와 그 위의 머그컵
+  // 통나무 의자와 그 위의 머그컵(불에서 먼 자리일수록 어둡게)
   drawLog(ctx) {
-    const x0 = HOME_X - 7, y0 = CHAR_Y + 19, w = 18;
+    if (!this.seated) return;
+    const hf = this.homeFlip, y0 = CHAR_Y + 19, w = 18;
+    const wx = c => this.homeX + (hf ? 15 - c : c);
+    const far = Math.min(2, (this.seat / 2) | 0);
+    const body = [['#2a1c18', '#49301f', '#6a4428'], ['#201614', '#33221a', '#49301f'], ['#181110', '#231814', '#33221a']][far];
+    const top = [['#3a2820', '#5e4028', '#8a5c34'], ['#2a1e1a', '#42301f', '#5e4028'], ['#1e1614', '#2e201a', '#42301f']][far];
     for (let i = 0; i < w; i++) {
-      const k = i / w; // 불에 가까운 오른쪽일수록 밝게
-      ctx.fillStyle = k < 0.35 ? '#2a1c18' : k < 0.7 ? '#49301f' : '#6a4428';
-      ctx.fillRect(x0 + i, y0, 1, 5);
-      ctx.fillStyle = k < 0.35 ? '#3a2820' : k < 0.7 ? '#5e4028' : '#8a5c34';
-      ctx.fillRect(x0 + i, y0, 1, 1);
+      const k = i / w, j = k < 0.35 ? 0 : k < 0.7 ? 1 : 2; // 불에 가까운 쪽일수록 밝게
+      ctx.fillStyle = body[j]; ctx.fillRect(wx(i - 7), y0, 1, 5);
+      ctx.fillStyle = top[j]; ctx.fillRect(wx(i - 7), y0, 1, 1);
     }
     ctx.fillStyle = '#1e1412';
-    ctx.fillRect(x0 + 3, y0 + 2, 4, 1); ctx.fillRect(x0 + 9, y0 + 3, 5, 1); ctx.fillRect(x0, y0 + 4, w, 1);
-    ctx.fillStyle = '#b08a58'; ctx.fillRect(x0 + w, y0, 2, 5);   // 잘린 단면
-    ctx.fillStyle = '#8a6238'; ctx.fillRect(x0 + w, y0 + 2, 1, 1); ctx.fillRect(x0 + w + 1, y0 + 4, 1, 1);
-    if (this.mugOnLog) drawSprite(ctx, MUG_SPR, MUG_PAL, HOME_X - 3, y0 - 4);
-  },
+    for (let c = -4; c < 0; c++) ctx.fillRect(wx(c), y0 + 2, 1, 1);
+    for (let c = 2; c < 7; c++) ctx.fillRect(wx(c), y0 + 3, 1, 1);
+    for (let c = -7; c < 11; c++) ctx.fillRect(wx(c), y0 + 4, 1, 1);
+    ctx.fillStyle = ['#b08a58', '#86683f', '#5e4a30'][far];               // 잘린 단면
+    ctx.fillRect(wx(11), y0, 1, 5); ctx.fillRect(wx(12), y0, 1, 5);
+    ctx.fillStyle = ['#8a6238', '#664a2c', '#463420'][far];
+    ctx.fillRect(wx(11), y0 + 2, 1, 1); ctx.fillRect(wx(12), y0 + 4, 1, 1);
+    if (this.mugOnLog) drawSprite(ctx, MUG_SPR, MUG_PAL, hf ? this.homeX + 15 : this.homeX - 3, y0 - 4, hf);
+  }
 
   draw(ctx, t) {
-    const pal = P.char, x = Math.round(this.x), f = this.flip;
+    if (!this.seated) return;
+    const pal = this.pal, x = Math.round(this.x), f = this.flip;
+    // 밝은 쪽(대문자)이 항상 불을 향하도록, 필요할 때 밝은 쪽/그늘 쪽 색을 맞바꿈
+    const sw = (!f) !== (x + 8 < CONFIG.fireX);
     let oy;
     if (this.pose === 'sit') {
       oy = CHAR_Y + this.bob;
-      drawSprite(ctx, SIT_TORSO, pal, x, oy + 10, f);
-      drawSprite(ctx, SIT_LEGS, pal, x, CHAR_Y + 17, f);      // 다리는 숨쉬기와 상관없이 고정
+      drawSprite(ctx, SIT_TORSO, pal, x, oy + 10, f, sw);
+      drawSprite(ctx, SIT_LEGS, pal, x, CHAR_Y + 17, f, sw);  // 다리는 숨쉬기와 상관없이 고정
     } else {
       const base = CHAR_Y - 2 + this.rise;
       oy = base + this.walkBob();
       const legs = (this.walking && ((this.walkT * 5) | 0) % 2 === 1) ? LEGS_B : LEGS_A;
-      drawSprite(ctx, STAND_TORSO, pal, x, oy + 10, f);
-      drawSprite(ctx, legs, pal, x, base + 20, f);
+      drawSprite(ctx, STAND_TORSO, pal, x, oy + 10, f, sw);
+      drawSprite(ctx, legs, pal, x, base + 20, f, sw);
     }
 
     // 머리(차를 마실 때는 살짝 뒤로, 씹을 때는 1px 아래로)
     const hx = x + (f ? -this.headDx : this.headDx), hy = oy + this.chew;
-    drawSprite(ctx, HEAD, pal, hx, hy, f);
+    drawSprite(ctx, HEAD, pal, hx, hy, f, sw);
     const ex = c => hx + (f ? 15 - c : c);
     if (this.eyes === 'happy') {                 // ^^ 모양
       ctx.fillStyle = pal.E;
@@ -1122,7 +1254,7 @@ const Character = {
     const arm = ARMS[this.arm];
     for (const p of arm.px) {
       let ch = p[2];
-      if (f) { const u = ch.toUpperCase(); ch = ch === u ? ch.toLowerCase() : u; }
+      if (sw) { const u = ch.toUpperCase(); ch = ch === u ? ch.toLowerCase() : u; }
       ctx.fillStyle = pal[ch];
       ctx.fillRect(this.lx(p[0]), oy + p[1], 1, 1);
     }
@@ -1144,8 +1276,8 @@ const Character = {
       }
       Items.drawSkewer(ctx, bx, by, tx, ty, this.held === 'stickM' ? Items.marshColor(this.heldAge) : null);
     }
-  },
-};
+  }
+}
 
 /* =====================================================================
  * AudioFx — Web Audio로 직접 만든 소리(음원 파일 없음). 기본은 꺼짐
@@ -1222,6 +1354,162 @@ const AudioFx = {
 };
 
 /* =====================================================================
+ * Net — 여러 명이 함께 보기(Supabase Realtime). 주소가 없거나 연결이 안 되면 혼자 보기로 동작
+ *   · 접속자 목록(presence): 이름, 옷 색, 앉은 자리
+ *   · 동작·채팅(broadcast): 저장하지 않고 그 순간에만 전달
+ *   · 불 위 자리(fire_slots 테이블): 먼저 올린/집은 한 명만 성공
+ * ===================================================================== */
+const ACT_KINDS = { tea: null, notYet: null, putPotato: 'potato', eatPotato: 'potato', plantMarsh: 'marsh', eatMarsh: 'marsh' };
+
+const Net = {
+  sb: null, ch: null, online: false, joined: false,
+  id: '', seat: 0, joinedAt: 0, others: new Map(),
+
+  init() {
+    this.id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    const lib = window.supabase;
+    if (!CONFIG.supabaseUrl || !CONFIG.supabaseKey || !lib || !lib.createClient) return;
+    try { this.sb = lib.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, { auth: { persistSession: false } }); }
+    catch (e) { this.sb = null; }
+  },
+
+  // 시작하기를 누르면 방에 들어감
+  join() {
+    if (!this.sb || this.joined) return;
+    this.joined = true; this.joinedAt = Date.now(); this.seat = null;
+    UI.setStatus('연결하는 중…');
+    const ch = this.ch = this.sb.channel(CONFIG.room, { config: { presence: { key: this.id }, broadcast: { self: false } } });
+    ch.on('presence', { event: 'sync' }, () => this.onSync());
+    ch.on('broadcast', { event: 'act' }, m => this.onAct(m.payload));
+    ch.on('broadcast', { event: 'chat' }, m => this.onChat(m.payload));
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'fire_slots' }, p => this.onRow(p));
+    ch.subscribe(status => {
+      if (status === 'SUBSCRIBED') { this.online = true; this.track(); this.syncClock(); this.fetchRows(); }
+      else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        this.online = false;
+        UI.setStatus('연결이 끊겼어요. 혼자 보는 중');
+        UI.showChat(false);
+      }
+    });
+  },
+
+  track() {
+    if (!this.ch) return;
+    this.ch.track({ name: Me.name, hat: Setup.sel.hat, coat: Setup.sel.coat, pants: Setup.sel.pants, seat: this.seat, t: this.joinedAt });
+  },
+
+  // 서버 시각과 내 기기 시각의 차이를 구함
+  syncClock() {
+    const t0 = Date.now();
+    this.sb.rpc('server_now').then(r => {
+      const t1 = Date.now(), srv = r && r.data ? Date.parse(r.data) : NaN;
+      if (!isNaN(srv)) Clock.offset = srv + (t1 - t0) / 2 - t1;
+    }, () => {});
+  },
+
+  // 지금 불 위에 있는 것을 한 번에 읽어 옴
+  fetchRows() {
+    this.sb.from('fire_slots').select('*').then(r => {
+      if (!r || r.error || !r.data) return;
+      const seen = {};
+      for (const row of r.data) {
+        const at = Date.parse(row.placed_at);
+        if (!Items.slot(row.kind, row.slot) || isNaN(at)) continue;
+        // 너무 오래 방치된 것은 치움
+        if (Clock.now() - at > CONFIG.staleMinutes * 60000) { this.sb.from('fire_slots').delete().eq('kind', row.kind).eq('slot', row.slot).then(() => {}, () => {}); continue; }
+        seen[row.kind + row.slot] = true;
+        Items.setRow(row.kind, row.slot, at, 0);
+      }
+      for (const kind of ['potato', 'marsh']) Items.slots[kind].forEach((s, i) => { if (s.at !== null && !s.hide && !seen[kind + i]) Items.removeRow(kind, i); });
+    }, () => {});
+  },
+
+  // 접속자 목록이 바뀔 때: 내 자리를 정하고, 다른 사람 캐릭터를 만들거나 지움
+  onSync() {
+    const st = this.ch.presenceState(), list = [];
+    for (const key of Object.keys(st)) { const p = st[key] && st[key][0]; if (p && key !== this.id) list.push(Object.assign({ id: key }, p)); }
+    const valid = s => Number.isInteger(s) && s >= 0 && s < SEATS.length;
+
+    // 내 자리: 비어 있는 가장 앞자리. 겹치면 먼저 온 사람이 앉고 나는 다시 고름
+    const taken = new Set(list.filter(o => valid(o.seat)).map(o => o.seat));
+    const lose = this.seat !== null && list.some(o => o.seat === this.seat && (o.t < this.joinedAt || (o.t === this.joinedAt && o.id < this.id)));
+    if (this.seat === null || lose) {
+      let free = null;
+      for (let i = 0; i < SEATS.length; i++) if (!taken.has(i)) { free = i; break; }
+      if (free !== this.seat) { this.seat = free; this.track(); }
+    }
+    if (Me.seat !== this.seat) Me.setSeat(this.seat);
+
+    // 다른 사람들
+    const alive = new Set();
+    for (const o of list) {
+      if (!valid(o.seat)) continue;
+      alive.add(o.id);
+      let a = this.others.get(o.id);
+      if (!a) { a = new Actor(false); a.id = o.id; this.others.set(o.id, a); a.seat = -1; }
+      const col = (v, d) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) ? v : d;
+      a.setOutfit({ hat: col(o.hat, DEFAULT_OUTFIT.hat), coat: col(o.coat, DEFAULT_OUTFIT.coat), pants: col(o.pants, DEFAULT_OUTFIT.pants) });
+      const name = String(o.name == null ? '' : o.name).slice(0, CONFIG.nameMaxLength);
+      if (a.name !== name) a.setName(name);
+      if (a.seat !== o.seat) a.setSeat(o.seat);
+    }
+    for (const [id, a] of this.others) if (!alive.has(id)) { a.remove(); this.others.delete(id); }
+
+    const n = alive.size + (Me.seated ? 1 : 0);
+    UI.setStatus(Me.seated ? '함께 불멍 중 ' + n + '명' : '자리가 꽉 찼어요(' + SEATS.length + '명). 구경하는 중');
+    UI.showChat(Me.seated);
+  },
+
+  // 테이블이 바뀔 때(누가 올리거나 가져감)
+  onRow(p) {
+    if (!p) return;
+    if (p.eventType === 'DELETE') { const r = p.old || {}; Items.removeRow(r.kind, r.slot); return; }
+    const r = p.new || {}, at = Date.parse(r.placed_at);
+    if (!isNaN(at)) Items.setRow(r.kind, r.slot, at, 800);
+  },
+
+  // 다른 사람의 동작
+  onAct(p) {
+    if (!p || !(p.kind in ACT_KINDS)) return;
+    const item = ACT_KINDS[p.kind];
+    if (item && !Items.slot(item, p.slot)) return;
+    const a = this.others.get(p.id);
+    if (item) { if (p.kind.indexOf('eat') === 0) Items.claim(item, p.slot); else if (a) Items.hide(item, p.slot); }
+    if (a && a.seated) a.perform(p.kind, p.slot);
+  },
+
+  onChat(p) {
+    if (!p || typeof p.text !== 'string') return;
+    const a = this.others.get(p.id);
+    if (a) a.say(p.text.slice(0, CONFIG.chatMaxLength), Scene.time);
+  },
+
+  // 자리에 올리기. 성공하면 true(같은 자리에 다른 사람이 먼저 올렸으면 false)
+  place(kind, i) {
+    Items.hide(kind, i);
+    if (!this.online) { Items.setRow(kind, i, Clock.now(), 0); return Promise.resolve(true); }
+    return this.sb.from('fire_slots').insert({ kind, slot: i, placed_by: Me.name }).then(r => {
+      if (r && r.error) { Items.land(kind, i); return false; }
+      Items.setRow(kind, i, Clock.now(), 0);
+      return true;
+    }, () => { Items.land(kind, i); return false; });
+  },
+
+  // 자리에서 가져가기. 성공하면 true(다른 사람이 먼저 집었으면 false)
+  take(kind, i) {
+    const done = () => { Items.claim(kind, i); Items.removeRow(kind, i); return true; };
+    if (!this.online) return Promise.resolve(done());
+    return this.sb.from('fire_slots').delete().eq('kind', kind).eq('slot', i).select().then(r => {
+      if (!r || r.error || !r.data || r.data.length !== 1) return false;
+      return done();
+    }, () => false);
+  },
+
+  act(kind, slot) { if (this.online) this.ch.send({ type: 'broadcast', event: 'act', payload: { id: this.id, kind, slot: slot === undefined ? null : slot } }); },
+  chat(text) { if (this.online) this.ch.send({ type: 'broadcast', event: 'chat', payload: { id: this.id, text } }); },
+};
+
+/* =====================================================================
  * UI — 하단 버튼 3개와 소리 버튼(아이콘도 픽셀 그림)
  * ===================================================================== */
 const ICONS = {
@@ -1291,6 +1579,7 @@ const ICONS = {
 
 const UI = {
   btnPotato: null, btnMarsh: null, btnTea: null, btnSound: null, last: '',
+  status: null, chatRow: null, chatInput: null, lastChat: 0,
 
   icon(btn, ic) {
     const cv = btn.querySelector('canvas'), g = cv.getContext('2d');
@@ -1303,24 +1592,72 @@ const UI = {
     this.btnMarsh = document.getElementById('btnMarsh');
     this.btnTea = document.getElementById('btnTea');
     this.btnSound = document.getElementById('sound');
+    this.status = document.getElementById('status');
+    this.chatRow = document.getElementById('chatRow');
+    this.chatInput = document.getElementById('chatInput');
+    this.chatInput.maxLength = CONFIG.chatMaxLength;
     this.icon(this.btnPotato, ICONS.potato);
     this.icon(this.btnMarsh, ICONS.marsh);
     this.icon(this.btnTea, ICONS.tea);
     this.icon(this.btnSound, ICONS.soundOff);
 
-    this.btnPotato.addEventListener('click', () => { const i = Items.freePotato(); if (!Character.busy && i >= 0) Character.putPotato(i); this.refresh(); });
-    this.btnMarsh.addEventListener('click', () => { const i = Items.freeMarsh(); if (!Character.busy && i >= 0) Character.plantMarsh(i); this.refresh(); });
-    this.btnTea.addEventListener('click', () => { if (!Character.busy) Character.drinkTea(); this.refresh(); });
+    this.btnPotato.addEventListener('click', () => this.place('potato', 'putPotato'));
+    this.btnMarsh.addEventListener('click', () => this.place('marsh', 'plantMarsh'));
+    this.btnTea.addEventListener('click', () => { if (this.canAct()) { Net.act('tea'); Me.drinkTea(); } this.refresh(); });
     this.btnSound.addEventListener('click', () => {
       const on = AudioFx.toggle();
       this.icon(this.btnSound, on ? ICONS.soundOn : ICONS.soundOff);
       this.btnSound.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+    document.getElementById('chatSend').addEventListener('click', () => this.sendChat());
+    this.chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') this.sendChat(); });
+  },
+
+  canAct() { return Setup.started && Me.seated && !Me.busy && !Me.waiting; },
+
+  // 고구마·마시멜로 올리기: 자리를 먼저 차지한 뒤(서버 확인) 동작을 시작
+  place(kind, act) {
+    const i = Items.free(kind);
+    if (!this.canAct() || i < 0) return;
+    Me.waiting = true; this.refresh();
+    Net.place(kind, i).then(ok => {
+      Me.waiting = false;
+      if (ok) { Net.act(act, i); Me.perform(act, i); }
+      this.refresh();
+    });
+  },
+
+  // 꽂힌 마시멜로·익은 고구마 집기: 먼저 집은 한 명만 성공
+  take(kind, act, i) {
+    if (!this.canAct()) return;
+    Me.waiting = true; this.refresh();
+    Net.take(kind, i).then(ok => {
+      Me.waiting = false;
+      if (ok) { Net.act(act, i); Me.perform(act, i); }
+      this.refresh();
+    });
+  },
+
+  sendChat() {
+    const text = this.chatInput.value.trim().slice(0, CONFIG.chatMaxLength), now = Date.now();
+    if (!text || !Me.seated || now - this.lastChat < 1000) return;   // 도배 방지: 1초에 한 번
+    this.lastChat = now;
+    this.chatInput.value = '';
+    Me.say(text, Scene.time);
+    Net.chat(text);
+  },
+
+  setStatus(text) { if (this.status.textContent !== text) this.status.textContent = text; },
+  showChat(show) {
+    show = show && Setup.started;
+    if (this.chatRow.hidden === !show) return;
+    this.chatRow.hidden = !show;
+    Scene.layout();
   },
 
   // 동작 중이거나 자리가 꽉 차면 버튼을 흐리게 하고 못 누르게 함
   refresh() {
-    const b = Character.busy, dp = b || Items.freePotato() < 0, dm = b || Items.freeMarsh() < 0;
+    const b = !this.canAct(), dp = b || Items.free('potato') < 0, dm = b || Items.free('marsh') < 0;
     const key = (dp ? 1 : 0) + '' + (dm ? 1 : 0) + (b ? 1 : 0);
     if (key === this.last) return;
     this.last = key;
@@ -1332,28 +1669,20 @@ const UI = {
  * Setup — 첫 진입 설정 창(이름, 모자·옷·바지 색) → 시작하기
  * ===================================================================== */
 const Setup = {
-  el: null, input: null, preview: null, tag: null, name: '', started: false,
-  sel: { hat: CONFIG.outfitColors.hat[0][0], coat: CONFIG.outfitColors.coat[0][0], pants: CONFIG.outfitColors.pants[0][0] },
+  el: null, input: null, preview: null, started: false,
+  sel: Object.assign({}, DEFAULT_OUTFIT),
   groups: {},
 
-  // 고른 색을 캐릭터 팔레트에 반영(밝은 쪽 색에서 그늘 쪽 색을 만들어 냄)
-  apply() {
-    const c = P.char, o = this.sel;
-    c.H = o.hat;   c.h = shade(o.hat, '#1a1030', 0.5);
-    c.B = o.coat;  c.b = shade(o.coat, '#0a1028', 0.55);
-    c.D = shade(o.coat, '#ffffff', 0.18); c.d = shade(c.b, '#ffffff', 0.12);
-    c.L = o.pants; c.l = shade(o.pants, '#0a0a20', 0.5);
-    this.drawPreview();
-  },
+  apply() { Me.setOutfit(this.sel); this.drawPreview(); },
 
   drawPreview() {
-    const g = this.preview.getContext('2d');
+    const g = this.preview.getContext('2d'), pal = Me.pal;
     g.clearRect(0, 0, 16, 24);
-    drawSprite(g, SIT_TORSO, P.char, 0, 10, false);
-    drawSprite(g, SIT_LEGS, P.char, 0, 17, false);
-    drawSprite(g, HEAD, P.char, 0, 0, false);
-    g.fillStyle = P.char.E; g.fillRect(10, 6, 1, 2);
-    for (const p of ARMS.rest.px) { g.fillStyle = P.char[p[2]]; g.fillRect(p[0], p[1], 1, 1); }
+    drawSprite(g, SIT_TORSO, pal, 0, 10, false);
+    drawSprite(g, SIT_LEGS, pal, 0, 17, false);
+    drawSprite(g, HEAD, pal, 0, 0, false);
+    g.fillStyle = pal.E; g.fillRect(10, 6, 1, 2);
+    for (const p of ARMS.rest.px) { g.fillStyle = pal[p[2]]; g.fillRect(p[0], p[1], 1, 1); }
   },
 
   // 색 고르기 버튼 한 줄 만들기
@@ -1380,7 +1709,6 @@ const Setup = {
     this.el = document.getElementById('setup');
     this.input = document.getElementById('nameInput');
     this.preview = document.getElementById('preview');
-    this.tag = document.getElementById('nameTag');
     this.input.maxLength = CONFIG.nameMaxLength;
 
     // 지난번에 고른 값이 있으면 미리 채워 둠(저장이 막힌 환경에서는 그냥 기본값)
@@ -1403,26 +1731,30 @@ const Setup = {
     this.input.addEventListener('keydown', e => { if (e.key === 'Enter') this.start(); });
   },
 
-  // 시작하기: 설정 창을 닫고 버튼과 이름표를 보여 줌
+  // 시작하기: 설정 창을 닫고 버튼과 이름표를 보여 준 뒤 방에 들어감
   start() {
-    this.name = this.input.value.trim().slice(0, CONFIG.nameMaxLength);
-    try { localStorage.setItem('campfire-outfit', JSON.stringify({ name: this.name, hat: this.sel.hat, coat: this.sel.coat, pants: this.sel.pants })); } catch (e) { /* 무시 */ }
+    if (this.started) return;
+    const name = this.input.value.trim().slice(0, CONFIG.nameMaxLength);
+    try { localStorage.setItem('campfire-outfit', JSON.stringify({ name, hat: this.sel.hat, coat: this.sel.coat, pants: this.sel.pants })); } catch (e) { /* 무시 */ }
     this.started = true;
     this.el.hidden = true;
-    this.tag.textContent = this.name;
+    Me.setName(name);
     Scene.bar.style.visibility = 'visible';
-    Scene.tagKey = '';
-    Scene.placeTag();
+    Net.join();
+    UI.refresh();
+    Scene.placeTags();
   },
 };
 
 /* =====================================================================
  * Scene — 전체 흐름: 화면 크기 계산, 업데이트, 그리기, 메인 루프
  * ===================================================================== */
+let Me = null;   // 내 캐릭터
+
 const Scene = {
   view: null, vctx: null, buf: null, ctx: null, bar: null,
   time: 0, last: 0, running: false, raf: 0,
-  k: 1, left: 0, top: 0, tagKey: '',
+  k: 1, left: 0, top: 0,
 
   init() {
     this.view = document.getElementById('view');
@@ -1439,26 +1771,28 @@ const Scene = {
       if (mq.addEventListener) mq.addEventListener('change', onChange); else if (mq.addListener) mq.addListener(onChange);
     }
 
-    Sky.init(); Forest.init(); Campfire.init(); Items.init(); Character.init(); UI.init(); Setup.init();
+    Sky.init(); Forest.init(); Campfire.init(); Items.init();
+    Me = new Actor(true);
+    Net.init(); UI.init(); Setup.init();
 
     window.addEventListener('resize', () => this.layout());
     window.addEventListener('orientationchange', () => this.layout());
     this.layout();
 
-    // 꽂힌 마시멜로, 다 익은 고구마 누르기
+    // 꽂힌 마시멜로, 고구마 누르기
     this.view.addEventListener('pointerdown', e => {
       const hit = this.pick(e);
-      if (!hit || Character.busy) return;
-      if (hit.type === 'marsh') Character.eatMarsh(hit.index);
-      else if (hit.type === 'potato') Character.eatPotato(hit.index);
-      else Character.notYet();
+      if (!hit || !UI.canAct()) return;
+      if (hit.type === 'marsh') UI.take('marsh', 'eatMarsh', hit.index);
+      else if (hit.type === 'potato') UI.take('potato', 'eatPotato', hit.index);
+      else { Net.act('notYet'); Me.notYet(); }
       UI.refresh();
     });
     this.view.addEventListener('pointermove', e => {
-      this.view.style.cursor = (!Character.busy && this.pick(e)) ? 'pointer' : 'default';
+      this.view.style.cursor = (UI.canAct() && this.pick(e)) ? 'pointer' : 'default';
     });
 
-    // 탭이 숨겨지면 멈추고, 돌아오면 다시 시작
+    // 탭이 숨겨지면 애니메이션을 멈추고, 돌아오면 다시 시작
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.stop(); else this.start(); });
 
     // 처음부터 불이 타고 있도록 미리 조금 돌려 둠
@@ -1479,7 +1813,7 @@ const Scene = {
     // 가로·세로에 다 들어가고, 버튼이 캐릭터와 모닥불(내부 y 160 위쪽)을 가리지 않는 가장 큰 정수 배율
     let s = Math.floor(Math.min(vw * dpr / W, vh * dpr / H, (vh - barH) * dpr / 160));
     s = Math.max(1, s);
-    this.view.width = W * s; this.view.height = H * s;
+    if (this.view.width !== W * s) { this.view.width = W * s; this.view.height = H * s; }
     const cw = W * s / dpr, ch = H * s / dpr;
     const left = (vw - cw) / 2;
     const top = Math.max(0, Math.min((vh - ch) / 2, vh - barH - 160 * s / dpr));
@@ -1488,19 +1822,26 @@ const Scene = {
     // 버튼 줄: 장면 바로 아래, 화면 밖으로는 나가지 않게
     this.bar.style.top = Math.min(vh - barH + 8, top + ch + 8) + 'px';
     this.vctx.imageSmoothingEnabled = false;
-    this.k = s / dpr; this.left = left; this.top = top; this.tagKey = '';
+    this.k = s / dpr; this.left = left; this.top = top;
+    this.eachActor(a => { a.tagKey = ''; });
     if (!this.running) this.draw();
   },
 
-  // 이름표를 캐릭터 머리 위에 붙여 둠(위치가 바뀔 때만 DOM을 건드림)
-  placeTag() {
-    if (!Setup.started || !Setup.name) return;
-    const x = Math.round(this.left + (Math.round(Character.x) + 7.5) * this.k);
-    const y = Math.round(this.top + (CHAR_Y - 5) * this.k);
-    const key = x + ',' + y;
-    if (key === this.tagKey) return;
-    this.tagKey = key;
-    Setup.tag.style.left = x + 'px'; Setup.tag.style.top = y + 'px';
+  eachActor(fn) { for (const a of Net.others.values()) fn(a); if (Me) fn(Me); },
+
+  // 이름표와 말풍선을 캐릭터 머리 위에 붙여 둠(바뀔 때만 DOM을 건드림)
+  placeTags() {
+    this.eachActor(a => {
+      if (!a.bubble.hidden && this.time >= a.bubbleUntil) { a.bubble.hidden = true; a.tagKey = ''; }
+      const show = Setup.started && a.seated && (a.name !== '' || !a.bubble.hidden);
+      const x = Math.round(this.left + (Math.round(a.x) + 7.5) * this.k);
+      const y = Math.round(this.top + (CHAR_Y - 5) * this.k);
+      const key = show ? x + ',' + y : 'off';
+      if (key === a.tagKey) return;
+      a.tagKey = key;
+      a.tag.hidden = !show;
+      if (show) { a.tag.style.left = x + 'px'; a.tag.style.top = y + 'px'; }
+    });
   },
 
   start() {
@@ -1532,7 +1873,7 @@ const Scene = {
     Sky.update(dt);
     Campfire.update(dt, t);
     Items.update(dt);
-    Character.update(dt, t);
+    this.eachActor(a => a.update(dt, t));
     AudioFx.update(dt);
     UI.refresh();
   },
@@ -1543,13 +1884,13 @@ const Scene = {
     Sky.draw(ctx, t);                       // 1. 밤하늘
     Forest.drawFar(ctx);                    // 2. 먼 숲
     Forest.drawNear(ctx, Campfire.flick);   // 3. 가까운 숲과 땅(불빛 범위만 따뜻하게)
-    Character.drawLog(ctx);                 // 5. 통나무 의자
+    this.eachActor(a => a.drawLog(ctx));    // 5. 통나무 의자
     Campfire.drawBack(ctx, t);              // 4. 모닥불
     Campfire.drawFlames(ctx);
     Items.drawPotatoes(ctx, t);
     Campfire.drawFront(ctx);
     Items.drawSkewers(ctx);
-    Character.draw(ctx, t);                 // 5. 캐릭터
+    this.eachActor(a => a.draw(ctx, t));    // 5. 캐릭터(내 캐릭터가 맨 앞)
     Items.drawFly(ctx, t);
     Campfire.drawParticles(ctx);            //    불티, 연기, 김
     Forest.drawFlies(ctx, t);               // 6. 반딧불이
@@ -1558,7 +1899,7 @@ const Scene = {
     // 작은 캔버스를 큰 캔버스로 정수 배율 확대
     this.vctx.imageSmoothingEnabled = false;
     this.vctx.drawImage(this.buf, 0, 0, this.view.width, this.view.height);
-    this.placeTag();
+    this.placeTags();
   },
 };
 
