@@ -1693,6 +1693,97 @@ const Merchant = {
 };
 
 /* =====================================================================
+ * Buddy — 모닥불 구석의 깨알 손님: 동그란 주황색 친구(안테나 끝에 반짝이는 별)
+ *   퇴근하고 불멍 왔다면서 노트북을 못 놓는 직장인. 누르면 한마디 함(내 화면에서만)
+ * ===================================================================== */
+const BUDDY_SPR = [
+  '............',
+  '......A.....',
+  '......A.....',
+  '....LOOOO...',
+  '..LLOOOOOO..',
+  '.LLOOOOOOOo.',
+  '.LOOOOOOOOo.',
+  '.LOOROOOORo.',
+  '.OOOOOOOOoo.',
+  '..OOOOOOoo..',
+  '...oooooo...',
+  '...o....o...',
+];
+const BUDDY_PAL = { O: '#e8823a', o: '#b85c26', L: '#f4a45c', R: '#f0a08a', A: '#8a5a34' };
+const BUDDY_LINES = [
+  '오늘은 퇴근했어요. 진짜로요.',
+  '회의록 v5는… 내일 쓸게요.',
+  '미워할 수가 없거든요.',
+  '사직서요? 반려됐어요.',
+  '불멍 중에도 요약은 하고 싶네요.',
+  '고구마 익으면 알려 주세요.',
+  '13번 슬라이드는 안 넘쳤겠죠…?',
+  '다음 할 일은 딱 하나, 쉬기예요.',
+];
+
+const Buddy = {
+  x: 34, y: 140, place: 'camp', seated: true, name: '', tagY: 136,
+  tag: null, bubble: null, label: null, bubbleUntil: 0, tagKey: '',
+  blinkT: 3, blinkHold: 0, last: -1,
+
+  init() {
+    this.tag = document.createElement('div'); this.tag.className = 'tag';
+    this.bubble = document.createElement('div'); this.bubble.className = 'bubble'; this.bubble.hidden = true;
+    this.label = document.createElement('div'); this.label.className = 'name';
+    this.tag.appendChild(this.bubble); this.tag.appendChild(this.label);
+    this.tag.hidden = true;
+    document.getElementById('tags').appendChild(this.tag);
+  },
+
+  hit(x, y) { return Math.abs(x - (this.x + 6)) < 11 && Math.abs(y - (this.y + 6)) < 11; },
+
+  // 누르면 한마디(같은 말을 연달아 하지 않음)
+  poke(time) {
+    let i = (Math.random() * BUDDY_LINES.length) | 0;
+    if (i === this.last) i = (i + 1) % BUDDY_LINES.length;
+    this.last = i;
+    this.bubble.textContent = BUDDY_LINES[i]; this.bubble.hidden = false;
+    this.bubbleUntil = time + CONFIG.chatBubbleSeconds; this.tagKey = '';
+  },
+
+  update(dt) {
+    if (this.blinkHold > 0) this.blinkHold -= dt;
+    this.blinkT -= dt;
+    if (this.blinkT <= 0) { this.blinkHold = 0.2; this.blinkT = rand(2.5, 6); }
+  },
+
+  draw(ctx, t) {
+    const x = this.x, bob = Math.sin(t * TAU / 4.2) < 0 ? 1 : 0, y = this.y + bob;   // 숨쉬듯 1px
+    // 돌로 눌러 둔 회의록 더미(뒤쪽)
+    ctx.fillStyle = '#d8d2c0'; ctx.fillRect(x - 7, this.y + 9, 6, 3);
+    ctx.fillStyle = '#9a9484'; ctx.fillRect(x - 7, this.y + 10, 6, 1);
+    ctx.fillStyle = '#6a6a72'; ctx.fillRect(x - 5, this.y + 8, 2, 1);
+    // 몸
+    drawSprite(ctx, BUDDY_SPR, BUDDY_PAL, x, y, false);
+    ctx.fillStyle = '#b85c26'; ctx.fillRect(x + 3, this.y + 11, 1, 1); ctx.fillRect(x + 8, this.y + 11, 1, 1);   // 발은 땅에 고정
+    // 반쯤 감긴 눈
+    ctx.fillStyle = '#2a1a22';
+    if (this.blinkHold > 0) { ctx.fillRect(x + 5, y + 6, 1, 1); ctx.fillRect(x + 8, y + 6, 1, 1); }
+    else { ctx.fillRect(x + 5, y + 5, 1, 2); ctx.fillRect(x + 8, y + 5, 1, 2); ctx.fillStyle = '#b85c26'; ctx.fillRect(x + 5, y + 4, 1, 1); ctx.fillRect(x + 8, y + 4, 1, 1); }
+    // 안테나 끝의 별: 은은하게 반짝임
+    const k = Math.sin(t * 1.7);
+    ctx.fillStyle = '#fff2a8'; ctx.fillRect(x + 6, y, 1, 1);
+    if (k > -0.2) { ctx.globalAlpha = 0.45 + 0.4 * k; ctx.fillRect(x + 5, y, 3, 1); ctx.fillRect(x + 6, y - 1, 1, 3); ctx.globalAlpha = 1; }
+    // 작은 노트북(화면 빛이 얼굴 쪽으로)
+    ctx.fillStyle = '#3a3e52'; ctx.fillRect(x + 12, this.y + 11, 5, 1);
+    ctx.fillRect(x + 16, this.y + 7, 1, 4);
+    ctx.fillStyle = ((t * 0.7) | 0) % 5 ? '#a8d4ff' : '#c8e4ff'; ctx.fillRect(x + 15, this.y + 7, 1, 4);
+  },
+
+  drawGlow(ctx) {
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = '#7ab4ff';
+    ctx.globalAlpha = 0.07; fillEllipse(ctx, this.x + 13, this.y + 8, 9, 7);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  },
+};
+
+/* =====================================================================
  * AudioFx — Web Audio로 직접 만든 소리(음원 파일 없음). 기본은 꺼짐
  * ===================================================================== */
 const AudioFx = {
@@ -2370,7 +2461,7 @@ const Scene = {
 
     Sky.init(); Forest.init(); Campfire.init(); Lake.init(); Items.init();
     Me = new Actor(true);
-    Net.init(); UI.init(); Setup.init(); Merchant.init();
+    Net.init(); UI.init(); Setup.init(); Merchant.init(); Buddy.init();
 
     window.addEventListener('resize', () => this.layout());
     window.addEventListener('orientationchange', () => this.layout());
@@ -2381,6 +2472,7 @@ const Scene = {
       // 표지판: 모닥불 ↔ 호수
       if (this.signAt(e)) { UI.travel(this.place === 'camp' ? 'lake' : 'camp'); return; }
       if (this.place === 'camp' && this.fade === 0 && Merchant.hit(...this.toScene(e))) { UI.openShop(); return; }
+      if (this.place === 'camp' && this.fade === 0 && Setup.started && Buddy.hit(...this.toScene(e))) { Buddy.poke(this.time); return; }
       const hit = this.pick(e);
       if (!hit || !UI.canAct()) return;
       if (hit.type === 'marsh') UI.take('marsh', 'eatMarsh', hit.index);
@@ -2389,7 +2481,7 @@ const Scene = {
       UI.refresh();
     });
     this.view.addEventListener('pointermove', e => {
-      const shop = this.place === 'camp' && UI.canAct() && Merchant.hit(...this.toScene(e));
+      const shop = this.place === 'camp' && ((UI.canAct() && Merchant.hit(...this.toScene(e))) || Buddy.hit(...this.toScene(e)));
       this.view.style.cursor = (shop || (UI.canGo() && this.signAt(e)) || (UI.canAct() && this.pick(e))) ? 'pointer' : 'default';
     });
 
@@ -2433,6 +2525,7 @@ const Scene = {
     this.k = s / dpr; this.left = left; this.top = top;
     this.eachActor(a => { a.tagKey = ''; });
     if (Merchant.npc) Merchant.npc.tagKey = '';
+    Buddy.tagKey = '';
     if (!this.running) this.draw();
   },
 
@@ -2443,12 +2536,13 @@ const Scene = {
     const all = [];
     this.eachActor(a => all.push(a));
     if (Merchant.npc) all.push(Merchant.npc);
+    if (Buddy.tag) all.push(Buddy);
     for (const a of all) {
       if (!a.bubble.hidden && this.time >= a.bubbleUntil) { a.bubble.hidden = true; a.tagKey = ''; }
       const here = a === Merchant.npc ? Merchant.state !== 'away' : a.seated;
       const show = Setup.started && here && a.place === this.place && this.fade < 0.5 && (a.name !== '' || !a.bubble.hidden);
       const x = Math.round(this.left + (Math.round(a.x) + 7.5) * this.k);
-      const y = Math.round(this.top + (CHAR_Y - 5) * this.k);
+      const y = Math.round(this.top + (a.tagY || CHAR_Y - 5) * this.k);
       const key = show ? x + ',' + y : 'off';
       if (key === a.tagKey) continue;
       a.tagKey = key;
@@ -2488,6 +2582,7 @@ const Scene = {
     Items.update(dt);
     this.eachActor(a => a.update(dt, t));
     Merchant.update(dt);
+    Buddy.update(dt);
     AudioFx.update(dt);
     UI.refresh();
   },
@@ -2506,6 +2601,7 @@ const Scene = {
       Forest.drawFar(ctx);                    // 2. 먼 숲
       Forest.drawNear(ctx, Campfire.flick);   // 3. 가까운 숲과 땅(불빛 범위만 따뜻하게)
       Lake.drawSign(ctx, 'camp');             //    호수로 가는 표지판
+      Buddy.draw(ctx, t);                     //    구석의 깨알 손님
       here(a => a.drawLog(ctx));              // 5. 통나무 의자
       Campfire.drawBack(ctx, t);              // 4. 모닥불
       Campfire.drawFlames(ctx);
@@ -2519,6 +2615,7 @@ const Scene = {
       Forest.drawFlies(ctx, t);               // 6. 반딧불이
       Campfire.drawGlow(ctx);                 //    따뜻한 빛 번짐
       Merchant.drawGlow(ctx, t);
+      Buddy.drawGlow(ctx);
     }
     if (this.fade > 0) { ctx.globalAlpha = this.fade; ctx.fillStyle = '#05071a'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
 
